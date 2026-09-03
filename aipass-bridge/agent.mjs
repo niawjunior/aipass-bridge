@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
+import { unifiedDiff } from './difflib.mjs';
 
 const argv = process.argv.slice(2);
 const flag = (name, fallback = null) => {
@@ -258,8 +259,13 @@ const TOOLS = {
   },
   run(_arg, body) {
     if (!ALLOW_RUN) return 'shell commands are disabled for this run';
+    // /bin/sh does not exist on Windows; cmd.exe is the always-present
+    // equivalent there. The model writes for whichever it was told about.
+    const [shell, flagArgs] = process.platform === 'win32'
+      ? ['cmd.exe', ['/d', '/s', '/c']]
+      : ['/bin/sh', ['-c']];
     try {
-      return clip(execFileSync('/bin/sh', ['-c', body], { cwd: ROOT, encoding: 'utf8', timeout: 120_000, stdio: ['ignore', 'pipe', 'pipe'] }));
+      return clip(execFileSync(shell, [...flagArgs, body], { cwd: ROOT, encoding: 'utf8', timeout: 120_000, stdio: ['ignore', 'pipe', 'pipe'] }));
     } catch (err) {
       return clip(`exit ${err.status}\n${String(err.stdout ?? '')}${String(err.stderr ?? '')}`);
     }
@@ -527,13 +533,21 @@ function showDiff() {
   console.log(bold(`\n${overlay.size} file(s) changed:\n`));
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aipass-'));
   for (const [abs, next] of overlay) {
-    const rel = path.relative(ROOT, abs);
+    const rel = posix(path.relative(ROOT, abs));
     const a = path.join(tmp, 'a'); const b = path.join(tmp, 'b');
-    fs.writeFileSync(a, fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : '');
+    const before = fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : '';
+    fs.writeFileSync(a, before);
     fs.writeFileSync(b, next);
     let diff;
     try { diff = execFileSync('diff', ['-u', '--label', `a/${rel}`, '--label', `b/${rel}`, a, b], { encoding: 'utf8' }); }
-    catch (err) { diff = String(err.stdout ?? ''); }
+    catch (err) {
+      // diff exits 1 to say "files differ" and prints the diff on stdout —
+      // that is the success path. Any other failure (no diff binary, as on
+      // Windows; a killed process) falls back to a diff made in-process
+      // rather than showing nothing at all.
+      const body = err.status === 1 ? String(err.stdout ?? '') : unifiedDiff(before, next);
+      diff = err.status === 1 || !body ? body : `--- a/${rel}\n+++ b/${rel}\n${body}`;
+    }
     for (const line of diff.split('\n')) {
       if (line.startsWith('+') && !line.startsWith('+++')) console.log(green(line));
       else if (line.startsWith('-') && !line.startsWith('---')) console.log(red(line));

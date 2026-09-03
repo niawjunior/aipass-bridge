@@ -25,11 +25,12 @@
   };
   const inflight = new Map();
   // How many bytes of media may be carried back inline as a data URI; above
-  // this it goes back as a link, since the bridge caps a POST body at 8 MB and
-  // base64 costs a third on top. This only applies to a same-origin URL that
-  // needs this page's cookie: a *generated* image, video or music clip comes
-  // back as a signed storage.googleapis.com link that anything can fetch, and
-  // is passed straight through.
+  // this it goes back as a link. The bridge accepts an extension post up to
+  // 128 MB, and base64 costs a third on top, so every cap here fits through.
+  // This only applies to a same-origin URL that needs this page's cookie: a
+  // *generated* image, video or music clip comes back as a signed
+  // storage.googleapis.com link that anything can fetch, and is passed straight
+  // through.
   const INLINE_CAP = {
     image: 5 * 1024 * 1024,
     audio: 25 * 1024 * 1024,

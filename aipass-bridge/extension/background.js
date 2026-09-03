@@ -62,11 +62,18 @@ const bridgeUrl = async () => {
 
 async function post(path, body) {
   try {
-    await fetch(`${await bridgeUrl()}${path}`, {
+    const res = await fetch(`${await bridgeUrl()}${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
+    // Retrying would duplicate deltas, so a refused post is surfaced, not
+    // repeated — without this a rejected body (too large, unknown job) vanished
+    // and the caller waited out its timeout for a reply that never came.
+    if (!res.ok) {
+      lastError = `bridge refused ${path} with ${res.status}`;
+      console.warn('[aipass-bg] POST rejected:', path, res.status);
+    }
   } catch (err) {
     lastError = String(err?.message ?? err);
     console.warn('[aipass-bg] POST error:', path, lastError);

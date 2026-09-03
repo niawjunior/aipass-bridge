@@ -295,10 +295,13 @@ export function tempDir(files = {}) {
 // `stdin` may be a string (sent at once) or an array of [delayMs, line] pairs,
 // which models a user typing after the process is already running — necessary
 // for watch-mode tests, where a line sent before the prompt appears is lost.
-export function run(script, args, { cwd, stdin } = {}) {
+// `env` overrides the child's environment, e.g. PATH:'' to make a binary the
+// script would shell out to unfindable.
+export function run(script, args, { cwd, stdin, env } = {}) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [script, ...args], {
       cwd, stdio: [stdin != null ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+      ...(env ? { env: { ...process.env, ...env } } : {}),
     });
     let out = '';
     child.stdout.on('data', (d) => { out += d; });

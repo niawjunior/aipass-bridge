@@ -864,7 +864,7 @@ chat. Only the last user message is forwarded.
 npm test
 ```
 
-93 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
+107 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
 bridge as a subprocess and a scriptable stand-in for the extension, so tests
 drive the actual HTTP surface and the real CLIs rather than mocks of them.
 
