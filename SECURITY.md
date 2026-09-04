@@ -66,6 +66,8 @@ Then restart the bridge and reload the extension.
   product.
 - The agent's `--allow-run` executes shell commands in the project root. It is off
   by default for that reason.
-- Remote image URLs are fetched server-side behind a private-address guard. That
-  guard is string-based and does not re-check across redirects — do not point it
-  at URLs you do not trust.
+- Remote image URLs are fetched server-side behind a private-address guard. The
+  guard understands IPv4 in every spelling the URL parser leaves (integer, hex,
+  octal and IPv4-mapped IPv6 forms) and re-checks every redirect hop. A bare
+  domain name that *resolves* to a private address is still not detected — do
+  not point it at URLs you do not trust.

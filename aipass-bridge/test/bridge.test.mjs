@@ -346,6 +346,16 @@ test('rejects an unexpected Host header (DNS-rebinding guard)', async () => {
   }
 });
 
+test('a malformed Host header is refused, and does not kill the process', async () => {
+  // `new URL(req.url, 'http://…')' throws on a header like this; the parse used
+  // to run before the try block, so one request was an unhandled rejection and
+  // Node exited. It must be answered, and the bridge must still be alive after.
+  const bad = await rawRequest(bridge.port, { host: 'bad host' });
+  assert.equal(bad.status, 403, 'a malformed Host is not in the allowlist');
+  const after = await fetch(`${bridge.base}/status`);
+  assert.ok(after.ok, 'the bridge survives the malformed Host');
+});
+
 test('sends no CORS header by default, so no web page can call the bridge', async () => {
   const res = await fetch(`${bridge.base}/status`);
   assert.equal(res.headers.get('access-control-allow-origin'), null);
@@ -404,6 +414,33 @@ test('an image URL pointing at a private address is dropped, not fetched', async
   const images = (job.parts ?? []).filter((p) => p.type === 'image');
   assert.equal(images.length, 0, 'private-network images must never reach the extension');
   assert.match(job.text, /describe this/, 'the text part still goes through');
+});
+
+test('IP spellings that mean a private address are refused too', async (t) => {
+  // The URL parser normalises integer/hex/octal IPv4 to dotted-quad, so those
+  // already meet the plain check; the mapped-IPv6 forms do not, and once meant
+  // loopback slipped past the guard.
+  const handler = scripted(['ok']);
+  const ext = await new FakeExtension(bridge.base, { onChat: handler }).connect();
+  t.after(() => ext.disconnect());
+
+  await post({
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'describe these' },
+        { type: 'image_url', image_url: { url: 'http://2130706433/x.png' } },        // 127.0.0.1 as an integer
+        { type: 'image_url', image_url: { url: 'http://0x7f000001/x.png' } },        // …as hex
+        { type: 'image_url', image_url: { url: 'http://[::ffff:127.0.0.1]/x.png' } }, // mapped loopback
+        { type: 'image_url', image_url: { url: 'http://[::ffff:169.254.0.1]/x.png' } }, // mapped link-local
+        { type: 'image_url', image_url: { url: 'http://[::]/x.png' } },              // unspecified
+      ],
+    }],
+  });
+
+  const job = ext.chats.at(-1);
+  const images = (job.parts ?? []).filter((p) => p.type === 'image');
+  assert.equal(images.length, 0, 'no private-address spelling may reach the extension');
 });
 
 test('creates a temporary conversation and repeats the flag on every turn', async (t) => {

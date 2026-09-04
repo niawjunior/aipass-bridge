@@ -76,6 +76,22 @@ test('dry run shows a diff but writes nothing; --apply writes', async (t) => {
   assert.equal(fs.readFileSync(path.join(wet, 'b.txt'), 'utf8'), 'brand new');
 });
 
+test('the diff still renders when there is no diff binary (the Windows shape)', async (t) => {
+  // PATH stripped, so execFileSync('diff') fails with ENOENT — exactly what
+  // happens on Windows. It used to print the file header and then nothing.
+  const dir = tempDir({ 'a.txt': 'hello' });
+  const ext = await new FakeExtension(bridge.base, {
+    onChat: scripted(['EDIT a.txt\nFIND\nhello\nNEW\ngoodbye\nEND\nDONE changed a.txt']),
+  }).connect();
+  t.after(() => ext.disconnect());
+
+  const { out } = await agent(dir, ['--apply'], { env: { PATH: '' } });
+  assert.equal(fs.readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'goodbye', 'the edit itself still lands');
+  assert.match(out, /--- a\/a\.txt/);
+  assert.match(out, /-hello/);
+  assert.match(out, /\+goodbye/);
+});
+
 test('a dry run offers to apply, and answering y writes the files', async (t) => {
   const replies = [
     'EDIT a.txt\nFIND\nhello\nNEW\ngoodbye\nEND\nCREATE b.txt\nbrand new\nEND',

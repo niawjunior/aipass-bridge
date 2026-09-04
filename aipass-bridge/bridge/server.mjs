@@ -24,7 +24,14 @@ const IDLE_TIMEOUT_MS = Number(process.env.AIPASS_IDLE_TIMEOUT_MS ?? 180_000);
 // here and would kill a generation that was going to succeed — and the credits
 // are already spent by then.
 const MEDIA_TIMEOUT_MS = Number(process.env.AIPASS_MEDIA_TIMEOUT_MS ?? 900_000);
-const MAX_BODY = 8 * 1024 * 1024;
+// Attachments up to MAX_ATTACHMENT_BYTES travel Base64-inlined in a JSON
+// envelope, which costs a third again plus escaping — the client-facing cap has
+// to hold that whole envelope or the advertised 20 MB file is undeliverable.
+const MAX_BODY = 32 * 1024 * 1024;
+// The extension's own posts are trusted and carry generated media inline (a
+// video up to the page's 50 MB inline cap is ~67 MB of Base64), so they get a
+// higher ceiling than client requests.
+const MAX_EXT_BODY = 128 * 1024 * 1024;
 
 let defaultModel = process.env.AIPASS_MODEL ?? 'gemini-3.1-flash-lite';
 // Bind newly created conversations to a custom aipass assistant. The form field
@@ -508,21 +515,38 @@ function startChat({ modelId, text, parts, aspectRatio: ratio, thinkingLevel, vi
   return { abort: () => current?.abort() };
 }
 
-// True for loopback, link-local and RFC1918 addresses. A bare domain name is
-// not classified here — that would need DNS resolution — so this blocks the
-// literal-IP SSRF attempts, which is what a URL in a chat message looks like.
+// True for loopback, link-local and RFC1918 addresses. The URL parser has
+// already normalised integer, hex and octal spellings of an IPv4 address to
+// dotted-quad by the time this sees the hostname, so those need no case of
+// their own. A bare domain name is not classified here — that would need DNS
+// resolution — so this blocks the literal-IP SSRF attempts, which is what a
+// URL in a chat message looks like.
+const privateV4 = (a, b) =>
+  a === 0 || a === 127 || a === 10                     // this-host, loopback, private
+  || (a === 169 && b === 254)                          // link-local incl. cloud metadata
+  || (a === 192 && b === 168)
+  || (a === 172 && b >= 16 && b <= 31);                // 172.16.0.0/12
+
 function isPrivateHost(host) {
-  if (host === 'localhost' || host.endsWith('.localhost')) return true;
-  if (host === '::1' || host === '[::1]') return true;
-  if (/^\[?(fe80|fc|fd)/i.test(host)) return true;           // IPv6 link-local / unique-local
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  let h = String(host).toLowerCase();
+  if (h.startsWith('[') && h.endsWith(']')) h = h.slice(1, -1);
+  if (h === 'localhost' || h.endsWith('.localhost')) return true;
+  if (h === '::' || h === '::1') return true;                 // unspecified / loopback
+  if (/^fe[89ab][0-9a-f]:/.test(h)) return true;               // fe80::/10 link-local
+  if (/^f[cd][0-9a-f]{2}:/.test(h)) return true;               // fc00::/7 unique-local
+  // An IPv4-mapped address. The URL parser rewrites ::ffff:127.0.0.1 into the
+  // hex form ::ffff:7f00:1, so both spellings have to be unwrapped to the IPv4
+  // address they carry — which a plain dotted-quad match never sees.
+  const mapped = h.startsWith('::ffff:') ? h.slice(7) : '';
+  if (mapped.includes('.')) return isPrivateHost(mapped);
+  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(mapped);
+  if (hex) {
+    const bits = (hex[1].padStart(4, '0') + hex[2].padStart(4, '0'));
+    return privateV4(parseInt(bits.slice(0, 2), 16), parseInt(bits.slice(2, 4), 16));
+  }
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
   if (!m) return false;
-  const [a, b] = [Number(m[1]), Number(m[2])];
-  if (a === 0 || a === 127 || a === 10) return true;          // this-host, loopback, private
-  if (a === 169 && b === 254) return true;                    // link-local incl. cloud metadata
-  if (a === 192 && b === 168) return true;
-  if (a === 172 && b >= 16 && b <= 31) return true;           // 172.16.0.0/12
-  return false;
+  return privateV4(Number(m[1]), Number(m[2]));
 }
 
 // What may be attached to a message. Images go to vision models; the document
@@ -549,31 +573,47 @@ const isAllowedAttachment = (type, kind) =>
 // Fetch a remote attachment and convert it to a Base64 data URI, with the SSRF
 // guard. `kind` narrows what content-type is acceptable: an image_url part will
 // take nothing but an image, a file part will also take a document.
+//
+// Redirects are followed manually so every hop is re-checked: fetch's own
+// follow would happily deliver a public URL that 302s to 169.254.169.254,
+// which is the classic way past a first-URL-only guard.
 async function fetchRemoteAsDataUri(urlStr, kind = 'image') {
-  const parsed = new URL(urlStr);
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`unsupported protocol: ${parsed.protocol}`);
-  }
-  const host = parsed.hostname.toLowerCase();
-  if (isPrivateHost(host)) {
-    throw new Error(`refusing private/internal network fetch: ${host}`);
-  }
+  const REDIRECTS = new Set([301, 302, 303, 307, 308]);
+  let current = new URL(urlStr);
+  for (let hop = 0; ; hop++) {
+    if (current.protocol !== 'http:' && current.protocol !== 'https:') {
+      throw new Error(`unsupported protocol: ${current.protocol}`);
+    }
+    const host = current.hostname.toLowerCase();
+    if (isPrivateHost(host)) {
+      throw new Error(`refusing private/internal network fetch: ${host}`);
+    }
 
-  const res = await fetch(urlStr, {
-    signal: AbortSignal.timeout(15_000),
-    headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-  });
-  if (!res.ok) throw new Error(`remote fetch failed with status ${res.status}`);
-  const contentType = (res.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
-  if (!isAllowedAttachment(contentType, kind)) {
-    throw new Error(`unsupported content-type: ${contentType}`);
+    const res = await fetch(current, {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(15_000),
+      headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+    });
+    if (REDIRECTS.has(res.status)) {
+      try { await res.body?.cancel(); } catch { /* already gone */ }
+      const location = res.headers.get('location');
+      if (!location) throw new Error('redirect carried no Location header');
+      if (hop >= 4) throw new Error('too many redirects');
+      current = new URL(location, current); // the next hop gets the same checks
+      continue;
+    }
+    if (!res.ok) throw new Error(`remote fetch failed with status ${res.status}`);
+    const contentType = (res.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
+    if (!isAllowedAttachment(contentType, kind)) {
+      throw new Error(`unsupported content-type: ${contentType}`);
+    }
+    const arrayBuffer = await res.arrayBuffer();
+    if (arrayBuffer.byteLength > MAX_ATTACHMENT_BYTES) {
+      throw new Error(`attachment too large: ${arrayBuffer.byteLength} bytes`);
+    }
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    return `data:${contentType};base64,${base64}`;
   }
-  const arrayBuffer = await res.arrayBuffer();
-  if (arrayBuffer.byteLength > MAX_ATTACHMENT_BYTES) {
-    throw new Error(`attachment too large: ${arrayBuffer.byteLength} bytes`);
-  }
-  const base64 = Buffer.from(arrayBuffer).toString('base64');
-  return `data:${contentType};base64,${base64}`;
 }
 
 // The mime type a data URI declares, or '' when it is not a data URI.
@@ -698,13 +738,13 @@ async function extractUserParts(messages) {
 
 /* ------------------------------------------------------------ http plumbing */
 
-function readBody(req) {
+function readBody(req, limit = MAX_BODY) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const parts = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY) { reject(new Error('body too large')); req.destroy(); return; }
+      if (size > limit) { reject(new Error('body too large')); req.destroy(); return; }
       parts.push(c);
     });
     req.on('end', () => resolve(Buffer.concat(parts).toString('utf8')));
@@ -913,7 +953,7 @@ function extEvents(req, res) {
 
 async function extPost(req, res, kind) {
   let body;
-  try { body = JSON.parse(await readBody(req)); }
+  try { body = JSON.parse(await readBody(req, MAX_EXT_BODY)); }
   catch { return json(res, 400, { ok: false }); }
   const job = jobs.get(body.jobId);
   if (!job) return json(res, 200, { ok: false, reason: 'unknown job' });
@@ -929,13 +969,21 @@ async function extPost(req, res, kind) {
 /* --------------------------------------------------------------- the server */
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const path = url.pathname.replace(/\/+$/, '') || '/';
-
+  // The Host check comes first and reads the raw header, because the URL
+  // construction below it throws on a malformed one — an async handler that
+  // throws before the try block is an unhandled rejection, and Node exits.
   if (!hostAllowed(req)) {
     res.writeHead(403, { 'content-type': 'text/plain' });
     return res.end('forbidden: unexpected Host header\n');
   }
+
+  let url;
+  try {
+    url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
+  } catch {
+    return oaiError(res, 400, 'malformed request URL');
+  }
+  const path = url.pathname.replace(/\/+$/, '') || '/';
 
   if (req.method === 'OPTIONS') {
     // Without an explicit AIPASS_CORS_ORIGIN this preflight carries no
@@ -1093,3 +1141,8 @@ server.listen(PORT, HOST, () => {
   log(`  conversation  : ${PINNED_CONVERSATION || 'most recent on the account'}`);
   log('  waiting for the Chrome extension…');
 });
+
+// For tests: the SSRF guard's redirect behaviour cannot be driven through the
+// HTTP surface without a public host, so it is exercised directly, and the
+// imported server handle lets the test file release the port when it is done.
+export { isPrivateHost, fetchRemoteAsDataUri, server };
