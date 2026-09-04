@@ -193,19 +193,44 @@ ask rather than guess — see
 
 ## Scope, and why
 
-Only the user's message is sent. Not a system prompt, not a transcript.
+**Only the newest user message is sent.** Not a system prompt, not the prior
+turns — the bridge takes the last `user` message out of the `messages` array and
+forwards that alone. Everything else in the array is dropped before anything
+leaves your machine.
 
-That is not a limitation of the bridge, it is what the endpoint accepts. A
-`messages` array containing an **assistant** turn is rejected upstream with a
-bare `403` from Google Frontend, before the model sees it — the web UI never
-sends one, because the server owns the conversation and its history. Attempts
-to supply an agent-style system prompt were also rejected, at sizes and shapes
-that plain text of the same size passed, which points at request scoring
-rather than any single rule.
+Two independent reasons it has to be this way, both checked against the live
+service:
 
-So this does the one thing that works reliably: send a message, stream the
-answer. Multi-turn works because the server remembers the conversation, the
-same way the web UI does.
+1. **The server owns the history.** aipass keeps the conversation on its side,
+   the way the web UI does, so multi-turn already works without resending
+   anything — ask a follow-up and it remembers. Replaying a transcript would
+   double it. A message array that carries earlier turns is simply not what the
+   endpoint expects.
+2. **The edge scores request *content*, not just size.** An agent-style system
+   prompt is often refused with a bare `403` from the WAF — in about 150ms,
+   before the model runs — while plain prose of the *same length* passes. The
+   trigger is specific strings, not volume: a shell path like `/bin/zsh` or a
+   `$HOME` on their own are enough. The local agent works around the handful it
+   needs (see the substitution table in `agent.mjs`), but an arbitrary external
+   prompt carries tokens we cannot predict.
+
+So the bridge does the one thing that works reliably: send a message, stream the
+answer, let the server hold the thread.
+
+### Agentic IDE clients (Cline, Cursor, Continue, …)
+
+These do not work, and cannot without a different upstream. They drive a model
+by sending a large **system prompt** full of tool definitions and the whole
+**conversation** on every step — exactly the two things above. Point one at the
+bridge and it gets none of its tools (the system prompt is dropped) and no
+history (only the last message survives), so it answers as if it has no
+abilities at all: *"I can't access your files."* That is not a bug in the
+bridge; it is the endpoint declining the shape those tools require.
+
+For the same job — a model that reads, searches and edits a local project — use
+the bridge's **own** agent, `npm run agent`, which is built to fit inside this
+constraint: it sends one message at a time and lets the model drive with the
+`NEED` / `SEARCH` / `EDIT` / `CREATE` / `DONE` actions above.
 
 ## Set up the coding assistant (one time)
 
