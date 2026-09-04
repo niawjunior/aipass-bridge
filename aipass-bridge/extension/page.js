@@ -18,7 +18,8 @@
       "the video provider's safety filter rejected the prompt or image. It is "
       + 'strict about recognisable real faces, public figures, copyrighted '
       + 'characters, violence and sensitive subjects; a crowd scene is often '
-      + 'enough. Rewrite the prompt and try again — a rejected job costs no quota',
+      + 'enough. Rewrite the prompt and try again, but note the attempt may still '
+      + 'have counted against the video quota',
     contentPolicyViolation: 'the prompt was rejected by a content filter before it reached the model',
     quotaExceeded: 'the account has used its video generations for this period — npm run credits shows the count',
     conflictActive: 'another video job is still running on this conversation',

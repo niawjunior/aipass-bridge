@@ -748,13 +748,25 @@ and are reported for the same reason, though nothing sends them yet.
 `4` and `6` seconds and the picker is a dropdown, so a value outside it is
 likely to be rejected upstream once the job has already been accepted.
 
-**A rejected job costs no quota.** Both an invalid body (`400`) and the
-provider's safety filter (`provider_content_policy`) fail before the generation
-is counted — verified against `npm run credits` across both. That filter is
-strict about recognisable faces, public figures, copyrighted characters,
-violence and sensitive subjects, and a plain crowd scene can be enough to trip
-it, so prompts can be iterated freely. The bridge expands the terse codes into
-what they mean, since the web UI's explanation never reaches a terminal.
+**A job that reaches the provider costs quota even if you never see a video.**
+A run cancelled at 47% still consumed one, and the counter updates with a lag,
+so a reading taken immediately after a failure can look reassuring and be wrong.
+Only a request the bridge refuses before submitting — a malformed body, an
+option the model does not accept — is genuinely free. Budget accordingly: ten a
+month on a standard account, and `npm run credits` reports the count.
+
+The provider's safety filter (`provider_content_policy`) is strict about
+recognisable faces, public figures, copyrighted characters, violence and
+sensitive subjects; a plain crowd scene can be enough to trip it. The bridge
+expands the terse codes into what they mean, since the web UI's explanation
+never reaches a terminal.
+
+**Long generations need a stream that keeps talking.** A video job can sit on one
+progress figure for minutes, and Node's own `fetch` aborts a response body that
+goes quiet for five (`UND_ERR_BODY_TIMEOUT`) — killing a generation that was
+going to succeed, with the quota already spent. The bridge emits an SSE comment
+every `AIPASS_KEEPALIVE_MS` (15s) so the connection keeps producing bytes;
+conforming parsers ignore comments, so no client sees a difference.
 
 ```bash
 npm run chat -- --model seedance-2.0-mini --resolution 480p --duration 6 \
@@ -845,6 +857,7 @@ decimals is a pool of 10,000 — the bridge does that division for you.
 | `AIPASS_CONVERSATION_ID` | *(unset)* | pin one conversation |
 | `AIPASS_IDLE_TIMEOUT_MS` | `180000` | fail a job after this long with no delta |
 | `AIPASS_MEDIA_TIMEOUT_MS` | `900000` | the same, for video and music models, which go quiet for minutes |
+| `AIPASS_KEEPALIVE_MS` | `15000` | how often a quiet stream emits an SSE comment, so a client's body timeout does not fire |
 | `AIPASS_HOST` | `127.0.0.1` | interface to bind; leaving it on loopback is the point |
 | `AIPASS_BRIDGE` | `http://127.0.0.1:8787` | read by the CLIs, not the server — same as `--bridge` |
 | `AIPASS_ASSISTANT_ID` | *(unset)* | bind new conversations to a custom aipass assistant |
