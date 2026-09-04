@@ -80,3 +80,48 @@ test('GNU diff, where present, agrees on the body', { skip: !hasGnuDiff }, () =>
     assert.deepEqual(bodyLines(unifiedDiff(a, b)), bodyLines(gnuDiff(a, b)), `a=${JSON.stringify(a)} b=${JSON.stringify(b)}`);
   }
 });
+
+// A trailing newline terminates the last line rather than starting an empty
+// one. Getting this wrong put a phantom blank line on the end of every diff and
+// inflated the @@ counts by one — invisible to a bodyLines cross-check, because
+// `/^[ +-]./` needs a character after the marker and so drops an empty +/- line.
+test('a trailing newline is not an extra line', () => {
+  const diff = unifiedDiff('', 'one\ntwo\nthree\n');
+  assert.match(diff, /@@ -0,0 \+1,3 @@/, 'three lines added, not four');
+  assert.equal(diff.split('\n').filter((l) => l === '+').length, 0, 'no phantom blank line');
+});
+
+test('a missing trailing newline is marked the way GNU marks it', () => {
+  const diff = unifiedDiff('one\ntwo', 'one\nTWO');
+  assert.match(diff, /\\ No newline at end of file/);
+});
+
+test('adding only a trailing newline is a change, not a no-op', () => {
+  const diff = unifiedDiff('a\nb', 'a\nb\n');
+  assert.notEqual(diff, '', 'the files differ and the diff must say so');
+  assert.deepEqual(bodyLines(diff), [' a', '-b', '+b']);
+});
+
+test('a one-line range omits its count, as the format requires', () => {
+  assert.match(unifiedDiff('a\n', ''), /@@ -1 \+0,0 @@/);
+  assert.match(unifiedDiff('', 'a\n'), /@@ -0,0 \+1 @@/);
+});
+
+test('blank lines inside a file are real lines', () => {
+  assert.deepEqual(bodyLines(unifiedDiff('a\n\n\nb\n', 'a\n\nb\n')).filter((l) => l.trim()), [' a', ' b']);
+  assert.match(unifiedDiff('a\n\n\nb\n', 'a\n\nb\n'), /^-$/m, 'the removed blank line is shown');
+});
+
+if (hasGnuDiff) {
+  test('matches GNU byte for byte on the shapes that bit us', () => {
+    const body = (s) => s.split('\n').filter((l) => !/^(---|\+\+\+)/.test(l)).join('\n').trim();
+    for (const [a, b] of [
+      ['', 'one\ntwo\nthree\n'], ['one\ntwo\nthree\n', ''],
+      ['a\nb', 'a\nb\n'], ['a\nb\n', 'a\nb'], ['x', ''],
+      ['a\nb\nc\n', 'a\nB\nc\n'],
+    ]) {
+      assert.equal(body(unifiedDiff(a, b)), body(gnuDiff(a, b)),
+        `differs from GNU for ${JSON.stringify(a)} -> ${JSON.stringify(b)}`);
+    }
+  });
+}

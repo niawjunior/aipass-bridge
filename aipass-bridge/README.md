@@ -155,9 +155,10 @@ client.chat.completions.create(model="claude-sonnet-5@default", messages=[{
 `file_data` is a `data:` URI; a plain `https://` URL works too and is fetched by
 the bridge behind the SSRF guard, so the extension is never asked to fetch a URL
 with your cookies. PDF, Word, Excel, PowerPoint, `.txt`, `.md`, `.csv` and
-`.json` are accepted, up to 20 MB. Anything else is refused here rather than
-uploaded and rejected upstream, where the error is vaguer. An image sent as a
-`file` part is treated as an image, not a document.
+`.json` are accepted, up to 20 MB — Base64 inside a JSON envelope costs a third
+again, so the bridge takes a 32 MB request body to carry one. Anything else is
+refused here rather than uploaded and rejected upstream, where the error is
+vaguer. An image sent as a `file` part is treated as an image, not a document.
 
 From the terminal:
 
@@ -864,7 +865,7 @@ chat. Only the last user message is forwarded.
 npm test
 ```
 
-107 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
+113 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
 bridge as a subprocess and a scriptable stand-in for the extension, so tests
 drive the actual HTTP surface and the real CLIs rather than mocks of them.
 
@@ -876,6 +877,11 @@ bytes on disk are unchanged; splitting a rejected turn; dropping a line that
 cannot be sent at any size; a premature `DONE` being ignored; recovery when the
 model drifts into prose; refusing paths outside the project root; and dry run
 leaving the disk untouched.
+
+`difflib.mjs` is cross-checked against GNU `diff` where the binary exists, and
+its output is verified to apply cleanly with `patch` — reconstructing the target
+file is the property that matters, since two different unified diffs can both be
+correct.
 
 The media cases are built from shapes captured off the live service rather than
 invented: a video part that carries `snapshotUrl` and no `url`, a signed storage
@@ -899,3 +905,7 @@ filter is being modelled, pass `reject` to refuse payloads matching a pattern.
   product. `npm run agent` does not: it uses a temporary conversation.
 - Long sessions burn credits. Only `gemini-3.1-flash-lite` is free-credit;
   `npm run models` marks it, and `npm run credits` says what is left.
+- A remote attachment URL is checked against private addresses before it is
+  fetched, on the first request and on every redirect hop. A bare **domain name**
+  that resolves to a private address is still not caught, since that needs DNS —
+  see [SECURITY.md](../SECURITY.md).
