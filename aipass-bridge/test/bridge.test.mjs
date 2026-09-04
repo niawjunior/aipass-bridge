@@ -722,3 +722,23 @@ test('models report the option surface each one actually accepts', async (t) => 
   assert.deepEqual(byId['seedance-2.0-mini'].options.images, { maximumImages: 9, sourceImage: false, referenceImages: true });
   assert.equal(byId['gemini-3.1-flash-lite'].options, undefined, 'a chat model has no video surface');
 });
+
+test('a quiet stream still sends bytes, so a client body timeout cannot kill it', async (t) => {
+  const slow = await startBridge({ AIPASS_KEEPALIVE_MS: '120' });
+  t.after(() => slow.stop());
+  // says nothing for a while, the way a video job sitting on one percentage does
+  const ext = await new FakeExtension(slow.base, {
+    onChat: async (_j, e) => { await new Promise((r) => setTimeout(r, 700)); await e.text('done'); await e.done(); },
+  }).connect();
+  t.after(() => ext.disconnect());
+
+  const res = await fetch(`${slow.base}/v1/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'gemini-3.1-flash-lite', stream: true, messages: [{ role: 'user', content: 'hi' }] }),
+  });
+  const raw = await res.text();
+  assert.ok(raw.includes(': keepalive'), 'the stream must produce bytes while it waits');
+  // SSE comments are ignored by a conforming parser, so the payload is unchanged
+  assert.match(raw, /"content":"done"/);
+  assert.match(raw, /data: \[DONE\]/);
+});

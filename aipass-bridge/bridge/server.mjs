@@ -24,6 +24,9 @@ const IDLE_TIMEOUT_MS = Number(process.env.AIPASS_IDLE_TIMEOUT_MS ?? 180_000);
 // here and would kill a generation that was going to succeed — and the credits
 // are already spent by then.
 const MEDIA_TIMEOUT_MS = Number(process.env.AIPASS_MEDIA_TIMEOUT_MS ?? 900_000);
+// How often a streaming response emits an SSE comment when it has nothing else
+// to say. Comfortably inside the 300s body timeout that Node's own fetch applies.
+const KEEPALIVE_MS = Number(process.env.AIPASS_KEEPALIVE_MS ?? 15_000);
 // Attachments up to MAX_ATTACHMENT_BYTES travel Base64-inlined in a JSON
 // envelope, which costs a third again plus escaping — the client-facing cap has
 // to hold that whole envelope or the advertised 20 MB file is undeliverable.
@@ -848,6 +851,16 @@ async function chatCompletions(req, res) {
       'x-accel-buffering': 'no',
       ...corsHeaders(),
     });
+    // A video job can sit on one progress figure for minutes, and a stream that
+    // sends nothing for five hits the default body timeout in Node's fetch —
+    // undici's UND_ERR_BODY_TIMEOUT — killing a generation that was going to
+    // succeed, with the quota already spent. An SSE comment is ignored by every
+    // conforming parser and keeps the connection producing bytes.
+    const keepalive = setInterval(() => { try { res.write(': keepalive\n\n'); } catch { /* closed */ } }, KEEPALIVE_MS);
+    keepalive.unref?.();
+    const stopKeepalive = () => clearInterval(keepalive);
+    res.on('close', stopKeepalive);
+
     const emit = (delta, finish = null) => {
       res.write(`data: ${JSON.stringify({
         id, object: 'chat.completion.chunk', created, model,
@@ -870,11 +883,13 @@ async function chatCompletions(req, res) {
         else emit({ content: part.text });
       },
       onDone: (finishReason) => {
+        stopKeepalive();
         emit({}, finishReason === 'length' ? 'length' : 'stop');
         res.write('data: [DONE]\n\n');
         res.end();
       },
       onError: (message) => {
+        stopKeepalive();
         res.write(`data: ${JSON.stringify({ error: { message, type: 'upstream_error' } })}\n\n`);
         res.write('data: [DONE]\n\n');
         res.end();
