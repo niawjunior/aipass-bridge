@@ -94,6 +94,43 @@ const readAt = (abs) => (overlay.has(abs) ? overlay.get(abs) : fs.readFileSync(a
 const existsAt = (abs) => overlay.has(abs) || fs.existsSync(abs);
 const SKIP = new Set(['node_modules', '.git', '.next', 'dist', 'build', '.cache']);
 
+
+// A file whose bytes are not text. Reading one returns mojibake, which the model
+// then spends a whole run trying to interpret — issue #31 burned 519 credits
+// doing exactly that with a PDF. Signatures come first because a PDF's header
+// is ASCII and its NUL bytes may sit past whatever we sample.
+const MAGIC = [
+  ['PDF', (b) => b.subarray(0, 4).toString('latin1') === '%PDF'],
+  ['a zip-based document (docx, xlsx, pptx)', (b) => b.subarray(0, 4).toString('latin1') === 'PK\x03\x04'],
+  ['PNG', (b) => b.subarray(1, 4).toString('latin1') === 'PNG'],
+  ['JPEG', (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff],
+  ['GIF', (b) => b.subarray(0, 3).toString('latin1') === 'GIF'],
+  ['gzip', (b) => b[0] === 0x1f && b[1] === 0x8b],
+  ['MP4 or MOV', (b) => b.subarray(4, 8).toString('latin1') === 'ftyp'],
+  ['RIFF media (wav, avi, webp)', (b) => b.subarray(0, 4).toString('latin1') === 'RIFF'],
+  ['Ogg', (b) => b.subarray(0, 4).toString('latin1') === 'OggS'],
+  ['MP3', (b) => b.subarray(0, 3).toString('latin1') === 'ID3'],
+  ['a compiled binary', (b) => b.subarray(1, 4).toString('latin1') === 'ELF'],
+];
+
+function binaryKind(abs) {
+  if (overlay.has(abs)) return null; // written by the agent this run, so text
+  let fd;
+  try {
+    fd = fs.openSync(abs, 'r');
+    const buf = Buffer.alloc(4096);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    const head = buf.subarray(0, n);
+    for (const [name, test] of MAGIC) if (test(head)) return name;
+    // Nothing recognised it, so fall back to the oldest test there is.
+    return head.includes(0) ? 'binary' : null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* already closed */ } }
+  }
+}
+
 const clip = (s) => (s.length > MAX_RESULT ? `${s.slice(0, MAX_RESULT)}\n… truncated` : s);
 // Paths that go to the model come back from it, in a NEED file or an EDIT. On
 // Windows path.relative yields `src\a.ts`, so normalise to one separator
@@ -173,10 +210,21 @@ const inbound = (text) => (text == null ? text : RESTORE.reduce((acc, [re, to]) 
 const TOOLS = {
   list(arg) {
     const abs = safe(arg || '.');
-    return clip(fs.readdirSync(abs, { withFileTypes: true })
-      .filter((e) => !SKIP.has(e.name))
-      .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
-      .sort().join('\n') || '(empty)');
+    const names = new Set(
+      (fs.existsSync(abs) ? fs.readdirSync(abs, { withFileTypes: true }) : [])
+        .filter((e) => !SKIP.has(e.name))
+        .map((e) => (e.isDirectory() ? `${e.name}/` : e.name)));
+    // A file the agent has written this run is readable by `read` and reported
+    // by `exists`, so a listing that omits it tells the model its own write
+    // failed. It then re-creates the file, doubts the tools, and eventually
+    // concludes it cannot reach the filesystem at all — issue #32.
+    for (const pending of overlay.keys()) {
+      const rel = path.relative(abs, pending);
+      if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) continue;
+      const [first, ...rest] = rel.split(path.sep);
+      names.add(rest.length ? `${first}/` : first);
+    }
+    return clip([...names].sort().join('\n') || '(empty)');
   },
   read(arg) {
     // Accept an optional trailing line range, e.g. `NEED file src/app.ts 200-320`.
@@ -189,6 +237,13 @@ const TOOLS = {
     const rel = parts.join(' ');
     const abs = safe(rel);
     if (!existsAt(abs)) return `no such file: ${rel}`;
+    const kind = binaryKind(abs);
+    if (kind) {
+      return `${rel} is ${kind === 'binary' ? 'a binary file' : `a ${kind} file`}, not text — `
+        + 'these tools only read text, and its bytes would be unreadable. Do not try to read it again. '
+        + `To ask a question about this document, attach it to a chat instead: `
+        + `npm run chat -- "your question" --file ${rel}`;
+    }
 
     const lines = readAt(abs).split('\n');
     const total = lines.length;
@@ -597,11 +652,19 @@ async function runTask(taskText, { first }) {
   let listing = '';
   try { listing = outbound(TOOLS.list('.')); } catch { /* ignore */ }
 
+  // A follow-up under --watch continues the same conversation, so it inherits
+  // whatever the model concluded last time — including, in issue #32, that it
+  // could not reach the filesystem at all. Re-stating the frame and the current
+  // listing costs one short paragraph and gives a drifted model the ground truth
+  // to correct itself against.
+  const again = `The project is still open in front of me and I will paste you whatever you ask for.`
+    + `\nTop level right now:\n${listing}`;
+
   let next = useSlim
     ? `${first ? `Top level of the project: ${listing}\n\n` : ''}Task: ${taskText}\n\nWhat should I open first?`
     : first
       ? `${PREAMBLE}\n\nTo save you a step, here is what is at the top level already:\n${listing}\n\nHere is what I want to know: ${taskText}\n\nWhat should I open first?`
-      : `New task: ${taskText}\n\nWhat should I open first?`;
+      : `${again}\n\nNew task: ${taskText}\n\nWhat should I open first?`;
 
   let nudges = 0;
   for (let step = 1; step <= MAX_STEPS; step++) {
