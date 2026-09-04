@@ -239,10 +239,10 @@ const TOOLS = {
     if (!existsAt(abs)) return `no such file: ${rel}`;
     const kind = binaryKind(abs);
     if (kind) {
-      return `${rel} is ${kind === 'binary' ? 'a binary file' : `a ${kind} file`}, not text — `
-        + 'these tools only read text, and its bytes would be unreadable. Do not try to read it again. '
-        + `To ask a question about this document, attach it to a chat instead: `
-        + `npm run chat -- "your question" --file ${rel}`;
+      return `${rel} is ${kind === 'binary' ? 'a binary file' : `a ${kind} file`}, not text.\n`
+        + 'These tools only read text, and its bytes would be unreadable. Do not try to read it again.\n'
+        + 'To ask a question about this document, attach it to a chat instead:\n'
+        + `  npm run chat -- "your question" --file ${rel}`;
     }
 
     const lines = readAt(abs).split('\n');
@@ -692,8 +692,13 @@ async function runTask(taskText, { first }) {
       let result;
       try { result = TOOLS[call.kind](call.arg, call.body); }
       catch (err) { result = `error: ${err.message}`; }
-      const head = result.split('\n')[0];
-      console.log(`  ${/^(no such|error|the text)/.test(result) ? red('✗') : green('✓')} ${call.kind} ${call.arg} ${dim(head.slice(0, 70))}`);
+      const [head, ...rest] = result.split('\n');
+      const refused = /^(no such|error|the text|that text)/.test(result) || / is (a|an) .*, not text\.$/.test(head);
+      console.log(`  ${refused ? red('✗') : green('✓')} ${call.kind} ${call.arg} ${dim(head.slice(0, 70))}`);
+      // A refusal carries the reason and usually the way forward, and the
+      // one-line preview cuts exactly that off — from the one reader who can
+      // act on it. The model gets the whole thing either way.
+      if (refused) for (const line of rest) console.log(dim(`      ${line}`));
       results.push(`Result of ${call.kind} ${call.arg}:\n${outbound(result)}`);
     }
 
