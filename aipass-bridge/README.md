@@ -278,8 +278,8 @@ and pastes the result back. This is the whole tool set:
 
 | Action | What it does |
 |---|---|
-| `NEED dir <path>` | list a directory (`.` for the project root) |
-| `NEED file <path>` | read a file, with line numbers; add a range like `NEED file src/app.ts 200-320` for a slice of a long one |
+| `NEED dir <path>` | list a directory (`.` for the project root), including files written earlier in the same run |
+| `NEED file <path>` | read a **text** file, with line numbers; add a range like `NEED file src/app.ts 200-320` for a slice of a long one |
 | `SEARCH <text>` | grep the whole project, returning `file:line: excerpt` matches — find a symbol without reading every file |
 | `EDIT <path>` → `FIND` … `NEW` … `END` | replace an exact snippet; the `FIND` text must match **one** place or the edit is refused |
 | `CREATE <path>` … `END` | create a new file or overwrite an existing one |
@@ -292,10 +292,25 @@ whose `FIND` text is not unique is refused rather than applied to the wrong
 occurrence; and long files page a screen at a time with a hint for the next
 range.
 
+**The agent reads text, not documents.** Pointed at a PDF, a Word or Excel file,
+an image or an archive, `NEED file` refuses by name — *"doc.pdf is a PDF file,
+not text"* — and says where to go instead. It used to hand the model raw bytes,
+which reads as gibberish and costs a whole run to work out. For a question about
+a document, attach it to a chat, where it is uploaded properly:
+
+```bash
+npm run chat -- "summarise this" --file report.pdf
+```
+
 **Watch mode** (`--watch`) keeps the agent open and takes follow-up tasks on the
 same conversation, so the model keeps everything it has already read in context
 — and because the server holds that history, each new task is still just one
 small message. Run it in your editor's integrated terminal for a live edit loop.
+
+Sharing a conversation means a follow-up also inherits any wrong turn the model
+took earlier, so each one re-states the frame and the current directory listing.
+It is a short paragraph, and it gives a model that has talked itself into
+"I cannot reach your files" something to correct itself against.
 
 **Binding to the custom assistant** (created above). Either point at a
 conversation started under it — `--conversation <id> --slim` — or let the bridge
@@ -865,7 +880,7 @@ chat. Only the last user message is forwarded.
 npm test
 ```
 
-113 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
+118 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
 bridge as a subprocess and a scriptable stand-in for the extension, so tests
 drive the actual HTTP surface and the real CLIs rather than mocks of them.
 
