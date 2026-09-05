@@ -192,7 +192,17 @@
       buffer = [];
     };
     const ticker = setInterval(flush, 40);
-    const push = (kind, text, filename) => { if (text) buffer.push({ kind, text, ...(filename ? { filename } : {}) }); };
+    // Anything that is part of the answer, as opposed to a status line. Counted
+    // because a stream can only be safely reattached before the first one: a
+    // resume replays from the start, which would duplicate whatever was already
+    // sent on.
+    let emitted = 0;
+    const CONTENT = new Set(['text', 'reasoning', 'image', 'video', 'audio', 'file']);
+    const push = (kind, text, filename) => {
+      if (!text) return;
+      if (CONTENT.has(kind)) emitted++;
+      buffer.push({ kind, text, ...(filename ? { filename } : {}) });
+    };
 
     try {
       // Process parts: upload any image blobs and get their storageKey
@@ -286,16 +296,45 @@
         );
       }
 
-      const reader = res.body.getReader();
+      let reader = res.body.getReader();
       const decoder = new TextDecoder();
       let pending = '';
       let finishReason = 'stop';
       const toolNames = new Map();
       const sources = [];
       const seenUnknown = new Set();
+      // The generation runs on the server, so losing the socket does not stop
+      // it — the answer is produced and nobody is listening. The app exposes the
+      // same reattach the Vercel AI SDK calls reconnectToStream, and this uses
+      // it: a broken read resumes rather than failing a job already being paid
+      // for. Deliberately narrow — see resume() for why it only fires before any
+      // content has been sent on.
+      let resumes = 0;
+      const resume = async () => {
+        // Only before the first content frame. After that a replay would arrive
+        // as a second copy of the answer, which is worse than the failure.
+        if (emitted > 0 || resumes >= 2) return false;
+        resumes++;
+        try {
+          const again = await fetch(`/actions/resume-stream/${encodeURIComponent(job.conversationId)}`, {
+            credentials: 'include', headers: { accept: '*/*' }, signal: controller.signal,
+          });
+          if (!again.ok || !again.body) return false;
+          reader = again.body.getReader();
+          push('status', `[stream] reattached after losing the connection (${resumes})`);
+          return true;
+        } catch { return false; }
+      };
 
       for (;;) {
-        const { value, done } = await reader.read();
+        let value, done;
+        try {
+          ({ value, done } = await reader.read());
+        } catch (err) {
+          if (controller.signal.aborted) throw err;
+          if (await resume()) continue;
+          throw err;
+        }
         if (done) break;
         pending += decoder.decode(value, { stream: true });
 

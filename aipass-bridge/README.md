@@ -869,6 +869,16 @@ sensitive subjects; a plain crowd scene can be enough to trip it. The bridge
 expands the terse codes into what they mean, since the web UI's explanation
 never reaches a terminal.
 
+**A dropped stream is reattached, not failed.** The generation runs on the
+server, so losing the socket does not stop it — the answer is produced and
+nobody is listening, which is how a run can cost credits and return nothing. The
+extension reattaches through `/actions/resume-stream/<conversation>`, the same
+route the web client uses, and does so **only before the first content frame**:
+a resume replays from the beginning, so reattaching after part of the answer had
+already been sent would deliver it twice. That narrowness is deliberate — it
+covers the observed failure, where nothing had arrived at all, and refuses the
+case where a fix would be worse than the fault.
+
 **Long generations need a stream that keeps talking.** A video job can sit on one
 progress figure for minutes, and Node's own `fetch` aborts a response body that
 goes quiet for five (`UND_ERR_BODY_TIMEOUT`) — killing a generation that was
