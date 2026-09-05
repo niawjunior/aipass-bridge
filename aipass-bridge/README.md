@@ -572,6 +572,32 @@ npm run chat -- "อยากได้ภาพแมว" --model gpt-image-2 --
 your scrollback; `--out DIR` chooses where. From an OpenAI client the image
 arrives inline as `![image](data:image/png;base64,…)`.
 
+### Generating from a reference image
+
+`--file` on an **image** model is a reference, not an attachment to read — the
+same thing the web UI does when you drop a picture into the composer and ask for
+a new one:
+
+```bash
+npm run chat -- --model gpt-image-2 --file photo.png --out ~/Desktop \
+  "สร้างภาพใหม่จากภาพนี้ ในสไตล์วาดด้วยสีน้ำ"
+```
+
+```
+files photo.png  (242.9 KB)
+[upload] uploading photo.png (242.9 KB)...
+[image saved to /Users/you/aipass-1788591228708-1.png]
+```
+
+Nothing new had to be built for this: an image sent as a `file` part is uploaded
+through `/actions/upload-file/{initiate,confirm}` and referenced by its
+`storageKey`, which is byte for byte the request the web UI makes. It was simply
+never written down.
+
+The provider's content rules still apply — the same filter described under
+[Video and music](#what-is-different-about-video-and-music) governs what may be
+generated, and it is the provider's call, not the bridge's.
+
 The aspect ratio rides on the same `imageAspectRatio` field the web UI sends.
 A request can set `aspect_ratio`, `POST /config {"aspectRatio":"4:3"}` sets the
 default, and `AIPASS_ASPECT_RATIO` sets it at startup.
