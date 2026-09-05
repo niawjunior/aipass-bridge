@@ -79,6 +79,7 @@ unusual.
 | `npm run agent -- "task" --root .` | local file tools, in a fresh conversation |
 | `npm run agent -- "task" --root . --watch` | stay open for follow-up tasks on the same conversation |
 | `npm run models` | list models, marking free-credit ones |
+| `npm run styles` | video style presets, and what each provider accepts |
 | `npm run conversations` | list conversations and which is in use |
 | `npm run credits` | how much of the credit pool is left |
 | `npm run doctor` | check every link in the chain and name what is broken |
@@ -821,20 +822,34 @@ have to guess:
                "images": { "maximumImages": 9, "sourceImage": false, "referenceImages": true } } }
 ```
 
-Only `seedance-2.0-fast` and `seedance-2.0-mini` declare resolutions
-(`480p`, `720p`); every other video model has none and the web UI shows no
-control for one, which is why the bridge drops a resolution those models never
-receive. The account can be offered fewer than the model declares — on the
-account this was checked against, the picker offers only `480p` — so the table
-is the ceiling, not a promise.
+**These values are read from the service, not hardcoded.** Four loaders publish
+them — `list-video-resolutions`, `list-video-durations`, `list-video-aspect-ratios`
+and `list-video-styles` — and they are keyed by **provider** (`seedance`, `veo`,
+`sora`, `wan`, plus `all`), never by model id. The bridge refreshes them with the
+model list and validates against what came back:
+
+```bash
+npm run styles
+```
+
+```
+  seedance   resolution 480p  ·  duration 4/6s  ·  ratio 16:9 9:16 1:1 4:3 3:4 21:9
+  veo        ratio 16:9 9:16
+```
+
+That output is the whole story: seedance takes resolution and duration, veo takes
+neither. It also settles a disagreement — the app's bundle lists `480p, 720p` for
+seedance, and the loader serves `480p` alone for this account. The served value
+wins; the bundle's table survives only as a fallback for when no tab is attached
+to ask.
 
 The image limits differ too — veo takes a source image and up to three
 references, seedance takes up to nine reference images and no source image —
 and are reported for the same reason, though nothing sends them yet.
 
-**Durations are a short list, not a free number.** `seedance-2.0-mini` offers
-`4` and `6` seconds and the picker is a dropdown, so a value outside it is
-likely to be rejected upstream once the job has already been accepted.
+**Durations are a short list, not a free number.** The loader serves `4` and `6`
+for seedance, and anything else is dropped before it is sent — previously it went
+upstream and was rejected after the job was accepted, once the quota was spent.
 
 **A job that reaches the provider costs quota even if you never see a video.**
 A run cancelled at 47% still consumed one, and the counter updates with a lag,
@@ -862,9 +877,17 @@ npm run chat -- --model seedance-2.0-mini --resolution 480p --duration 6 \
 ```
 
 The **style** presets live in `/loaders/list-video-styles` as records of
-`{id, name_en, name_th, preprompt, icon, sort_order}` — Cute / Mascot,
-Documentary, AI / Cyber, Minimal, Realistic and the rest. The app does not send
-the id; it sends that record's `preprompt` string, so `--style` takes the text.
+`{id, name_en, name_th, preprompt, icon, sort_order}`. The app does not send the
+id; it sends that record's `preprompt` string. `--style` takes either — name the
+preset and the bridge resolves it:
+
+```bash
+npm run chat -- --model seedance-2.0-mini --style Documentary "an empty street"
+npm run chat -- --model seedance-2.0-mini --style สารคดี "an empty street"
+```
+
+`npm run styles` lists all eight with their preprompt text; raw text still passes
+through unchanged.
 
 ## When it is not working
 
@@ -981,7 +1004,7 @@ chat. Only the last user message is forwarded.
 npm test
 ```
 
-125 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
+130 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
 bridge as a subprocess and a scriptable stand-in for the extension, so tests
 drive the actual HTTP surface and the real CLIs rather than mocks of them.
 

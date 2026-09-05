@@ -742,3 +742,72 @@ test('a quiet stream still sends bytes, so a client body timeout cannot kill it'
   assert.match(raw, /"content":"done"/);
   assert.match(raw, /data: \[DONE\]/);
 });
+
+// Phase 1: the app serves what each video provider accepts. The bridge used to
+// hardcode a table lifted from the minified bundle, which disagreed with the
+// live loader — it listed 720p for seedance where the account is served 480p.
+const videoJob = async (ext, body) => {
+  await post({ model: 'seedance-2.0-mini', messages: [{ role: 'user', content: 'a street' }], ...body });
+  return ext.videos.at(-1);
+};
+
+test('served options beat the hardcoded table', async (t) => {
+  const ext = await new FakeExtension(bridge.base).connect();
+  t.after(() => ext.disconnect());
+  await waitFor(async () => (await (await fetch(`${bridge.base}/v1/models?refresh=1`)).json()).data.length > 1);
+  await waitFor(async () => (await (await fetch(`${bridge.base}/video-options`)).json()).styles.length > 0);
+
+  // 720p is in the fallback table and NOT in what the loader serves
+  assert.equal((await videoJob(ext, { resolution: '720p' })).resolution, undefined);
+  assert.equal((await videoJob(ext, { resolution: '480p' })).resolution, '480p');
+});
+
+test('a duration outside the served list is dropped, not sent', async (t) => {
+  const ext = await new FakeExtension(bridge.base).connect();
+  t.after(() => ext.disconnect());
+  await waitFor(async () => (await (await fetch(`${bridge.base}/video-options?refresh=1`)).json()).styles.length > 0);
+
+  // 8 was in our own README until the picker showed only 4 and 6
+  assert.equal((await videoJob(ext, { duration: 8 })).duration, undefined);
+  assert.equal((await videoJob(ext, { duration: 6 })).duration, 6);
+});
+
+test('an aspect ratio is checked against the provider, not the model', async (t) => {
+  const ext = await new FakeExtension(bridge.base).connect();
+  t.after(() => ext.disconnect());
+  await waitFor(async () => (await (await fetch(`${bridge.base}/video-options?refresh=1`)).json()).styles.length > 0);
+
+  // 21:9 is a seedance row; 16:9 is an "all" row and reaches every provider
+  assert.equal((await videoJob(ext, { aspect_ratio: '21:9' })).aspectRatio, '21:9');
+  await post({ model: 'veo-3.1-fast-generate-001', messages: [{ role: 'user', content: 'x' }], aspect_ratio: '21:9' });
+  assert.equal(ext.videos.at(-1).aspectRatio, undefined, 'seedance-only ratios must not reach veo');
+  await post({ model: 'veo-3.1-fast-generate-001', messages: [{ role: 'user', content: 'x' }], aspect_ratio: '16:9' });
+  assert.equal(ext.videos.at(-1).aspectRatio, '16:9', 'an "all" row applies to every provider');
+});
+
+test('a style can be named instead of pasted', async (t) => {
+  const ext = await new FakeExtension(bridge.base).connect();
+  t.after(() => ext.disconnect());
+  await waitFor(async () => (await (await fetch(`${bridge.base}/video-options?refresh=1`)).json()).styles.length > 0);
+
+  assert.equal((await videoJob(ext, { style_preprompt: 'Documentary' })).stylePreprompt,
+    'Documentary style, natural camera work.', 'the name resolves to the preset text');
+  assert.equal((await videoJob(ext, { style_preprompt: 'สารคดี' })).stylePreprompt,
+    'Documentary style, natural camera work.', 'the Thai name works too');
+  assert.equal((await videoJob(ext, { style_preprompt: 'something bespoke' })).stylePreprompt,
+    'something bespoke', 'raw text still passes through');
+});
+
+test('models report the served surface, not what was cached at startup', async (t) => {
+  const ext = await new FakeExtension(bridge.base).connect();
+  t.after(() => ext.disconnect());
+  await waitFor(async () => (await (await fetch(`${bridge.base}/v1/models?refresh=1`)).json()).data.length > 1);
+  await waitFor(async () => (await (await fetch(`${bridge.base}/video-options?refresh=1`)).json()).styles.length > 0);
+
+  const byId = Object.fromEntries((await (await fetch(`${bridge.base}/v1/models`)).json()).data.map((m) => [m.id, m]));
+  assert.deepEqual(byId['seedance-2.0-mini'].options.resolutions, ['480p']);
+  assert.deepEqual(byId['seedance-2.0-mini'].options.durations, [4, 6]);
+  assert.deepEqual(byId['veo-3.1-fast-generate-001'].options.aspectRatios, ['16:9', '9:16'],
+    'veo gets the "all" rows and none of seedance\'s');
+  assert.equal(byId['veo-3.1-fast-generate-001'].options.resolutions, null);
+});

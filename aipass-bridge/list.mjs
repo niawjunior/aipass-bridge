@@ -13,6 +13,7 @@ if (argv.some((a) => ['--help', '-h', 'help'].includes(a))) {
 
   models [kind]  list models by category; kind narrows it (chat, research,
                  image, video, music)
+  styles         video style presets, and what each provider will accept
   conversations  list conversations, marking the one in use
   credits        how much of the credit pool is left
 
@@ -22,6 +23,8 @@ Each is a thin wrapper over: node aipass-bridge/list.mjs <what>`);
   process.exit(0);
 }
 
+const dim = (t) => `\x1b[2m${t}\x1b[0m`;
+
 const get = async (p) => {
   const res = await fetch(`${BRIDGE}${p}`);
   if (!res.ok) throw new Error(`bridge returned ${res.status}`);
@@ -29,7 +32,30 @@ const get = async (p) => {
 };
 
 try {
-  if (what === 'models') {
+  if (what === 'styles') {
+    // The presets a video model accepts, plus what each provider is served —
+    // all of it read from the app's own loaders rather than hardcoded here.
+    const { styles, byProvider } = await get('/video-options?refresh=1');
+    if (!styles.length) {
+      console.log('no styles returned — is a de.aipass.net tab open?');
+    } else {
+      console.log('\nวิดีโอสไตล์ · video styles\n');
+      for (const v of styles) {
+        console.log(`  ${v.name.padEnd(22)} ${v.nameTh ?? ''}`);
+        console.log(`  ${' '.repeat(22)} ${dim(v.preprompt.slice(0, 84))}${v.preprompt.length > 84 ? '…' : ''}`);
+      }
+      console.log(`\nUse the name: npm run chat -- --style ${JSON.stringify(styles[0].name)}\n`);
+    }
+    for (const [provider, o] of Object.entries(byProvider)) {
+      const parts = [
+        o.resolutions.length ? `resolution ${o.resolutions.join('/')}` : '',
+        o.durations.length ? `duration ${o.durations.join('/')}s` : '',
+        o.aspectRatios.length ? `ratio ${o.aspectRatios.join(' ')}` : '',
+      ].filter(Boolean);
+      if (parts.length) console.log(`  ${provider.padEnd(10)} ${parts.join('  ·  ')}`);
+    }
+    console.log();
+  } else if (what === 'models') {
     // The web UI groups these into tabs; the loader sends no category, so the
     // bridge derives one and this prints in the same order the tabs run.
     const want = argv[1] && !argv[1].startsWith('-') ? argv[1] : '';

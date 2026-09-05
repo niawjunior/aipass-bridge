@@ -9,6 +9,7 @@
     "chat": "node aipass-bridge/chat.mjs",
     "agent": "node aipass-bridge/agent.mjs",
     "models": "node aipass-bridge/list.mjs models",
+    "styles": "node aipass-bridge/list.mjs styles",
     "conversations": "node aipass-bridge/list.mjs conversations",
     "credits": "node aipass-bridge/list.mjs credits",
     "doctor": "node aipass-bridge/doctor.mjs",

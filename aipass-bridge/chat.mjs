@@ -31,8 +31,8 @@ if (argv.includes('--help') || argv.includes('-h')) {
   --duration N        video length in seconds
   --camera-fixed      lock the camera for the shot
   --no-audio          do not generate a soundtrack with the video
-  --style TEXT        a video style preprompt — the preset's own text, not its
-                      id (README: "The option surface differs per model")
+  --style NAME        a video style — name a preset ("Documentary") or pass raw
+                      preprompt text; npm run styles lists them
   --out DIR           where to save generated images, video and music
                                             (default: the cwd)
   --paste-idle MS     how long to wait before treating pasted lines as one
