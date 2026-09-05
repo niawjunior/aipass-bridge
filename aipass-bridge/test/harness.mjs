@@ -88,6 +88,31 @@ export const assistantsFixture = (assistants) => encodeTurboStream({
   'routes/loaders/list-ai-assistants': { data: { data: assistants, error: null } },
 });
 
+// The video option loaders all answer with this row shape: keyed by provider,
+// never by model id, with "all" applying to every provider.
+export const videoOptionFixture = (route, rows) => encodeTurboStream({
+  [`routes/loaders/${route}`]: { data: { data: rows, error: null } },
+});
+
+export const DEFAULT_VIDEO_OPTIONS = {
+  'list-video-resolutions': [
+    { id: 'r1', provider: 'seedance', label: '480p', value: '480p', is_default: true, is_active: true },
+  ],
+  'list-video-durations': [
+    { id: 'd1', provider: 'seedance', label: '4s', value: 4, is_default: true, is_active: true },
+    { id: 'd2', provider: 'seedance', label: '6s', value: 6, is_default: false, is_active: true },
+  ],
+  'list-video-aspect-ratios': [
+    { id: 'a1', provider: 'all', label: '16:9', value: '16:9', is_default: true, is_active: true },
+    { id: 'a2', provider: 'all', label: '9:16', value: '9:16', is_default: false, is_active: true },
+    { id: 'a3', provider: 'seedance', label: '21:9', value: '21:9', is_default: false, is_active: true },
+  ],
+  'list-video-styles': [
+    { id: 's1', name_en: 'Documentary', name_th: 'สารคดี', preprompt: 'Documentary style, natural camera work.', is_active: true },
+    { id: 's2', name_en: 'Anime', name_th: 'อนิเมะ', preprompt: 'Japanese anime visual style.', is_active: true },
+  ],
+};
+
 export const conversationsFixture = (conversations) => encodeTurboStream({
   'routes/loaders/list-converstaions': { data: { conversations, gatewayFlash: null } },
 });
@@ -165,7 +190,7 @@ const DEFAULT_CONVERSATIONS = [
 // Stands in for the extension. `onChat` receives the job plus an emitter and
 // decides what the upstream would have streamed back.
 export class FakeExtension {
-  constructor(base, { onChat, models = DEFAULT_MODELS, conversations = DEFAULT_CONVERSATIONS, quota = quotaFixture(), assistants = [] } = {}) {
+  constructor(base, { onChat, models = DEFAULT_MODELS, conversations = DEFAULT_CONVERSATIONS, quota = quotaFixture(), assistants = [], videoOptions = DEFAULT_VIDEO_OPTIONS } = {}) {
     this.base = base;
     this.quota = quota;
     this.onChat = onChat ?? (async (_job, e) => { await e.text('ok'); await e.done(); });
@@ -176,6 +201,7 @@ export class FakeExtension {
     this.videos = [];      // every video-generation job received
     this.assistants = [];  // every assistant-creation job received
     this.existingAssistants = assistants;
+    this.videoOptions = videoOptions;
     this.loaders = [];     // every loader url received
   }
 
@@ -249,6 +275,8 @@ export class FakeExtension {
         ? conversationsFixture(this.conversations)
         : job.url.includes('list-ai-assistants')
         ? assistantsFixture(this.existingAssistants)
+        : /list-video-(resolutions|durations|aspect-ratios|styles)/.test(job.url)
+        ? videoOptionFixture(job.url.match(/list-video-[a-z-]+/)[0], this.videoOptions[job.url.match(/list-video-[a-z-]+/)[0]] ?? [])
         : modelsFixture(this.models);
       return void this.post('/ext/loader', { jobId: job.jobId, raw });
     }

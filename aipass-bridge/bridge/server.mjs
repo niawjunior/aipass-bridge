@@ -111,6 +111,12 @@ const LOADERS = {
   // parameter, so it is parsed rather than turbo-stream decoded.
   quota: '/loaders/get-usage-quota',
   assistants: '/loaders/list-ai-assistants.data?_routes=routes%2Floaders%2Flist-ai-assistants',
+  // The four that describe what a video model will accept. Each answers with
+  // rows keyed by *provider* — seedance, veo, or "all" — never by model id.
+  videoResolutions: '/loaders/list-video-resolutions.data?_routes=routes%2Floaders%2Flist-video-resolutions',
+  videoDurations: '/loaders/list-video-durations.data?_routes=routes%2Floaders%2Flist-video-durations',
+  videoAspectRatios: '/loaders/list-video-aspect-ratios.data?_routes=routes%2Floaders%2Flist-video-aspect-ratios',
+  videoStyles: '/loaders/list-video-styles.data?_routes=routes%2Floaders%2Flist-video-styles',
 };
 
 // list-models carries no category field — the tabs in the web UI (สนทนา,
@@ -153,13 +159,62 @@ const VIDEO_PROVIDERS = [
 ];
 const videoProviderOf = (id) => VIDEO_PROVIDERS.find(([, re]) => re.test(id))?.[0];
 
-// Which video models accept a resolution, and which. The app gates only this
-// one option by model — everything else it sends whenever the caller set it —
-// so the bridge mirrors that rather than inventing stricter rules.
-const VIDEO_RESOLUTIONS = {
-  'seedance-2.0-fast': ['480p', '720p'],
-  'seedance-2.0-mini': ['480p', '720p'],
-};
+// Last-resort resolutions, used only when the loader cannot be read — no tab, or
+// the route moved. These came from the app bundle, and the live loader disagrees
+// with them: it serves 480p alone for this account. That disagreement is the
+// whole reason the served values win.
+const VIDEO_RESOLUTIONS_FALLBACK = { seedance: ['480p', '720p'] };
+
+// What the four video-option loaders returned, refreshed with the model list.
+let videoOptions = { at: 0, resolutions: [], durations: [], aspectRatios: [], styles: [] };
+
+// Every one of those loaders answers with the same row shape, so one reader
+// covers all four: the first array of objects carrying a string id.
+function extractRows(decoded) {
+  let rows = null;
+  const walk = (v) => {
+    if (!v || typeof v !== 'object' || rows) return;
+    if (Array.isArray(v)) {
+      if (v.length && v.every((x) => x && typeof x === 'object' && typeof x.id === 'string')) { rows = v; return; }
+      return void v.forEach(walk);
+    }
+    Object.values(v).forEach(walk);
+  };
+  walk(decoded);
+  return (rows ?? []).filter((r) => r.is_active !== false);
+}
+
+// Rows that apply to one provider. An "all" row applies to every provider, which
+// is how 16:9 reaches veo while 21:9 stays specific to seedance.
+const forProvider = (rows, provider) =>
+  rows.filter((r) => r.provider === provider || r.provider === 'all');
+
+const valuesFor = (rows, provider) => [...new Set(forProvider(rows, provider).map((r) => r.value))];
+
+async function refreshVideoOptions() {
+  const read = async (key) => {
+    try { return extractRows(decodeTurboStream(await fetchLoader(LOADERS[key]))); }
+    catch { return []; }
+  };
+  const [resolutions, durations, aspectRatios, styles] = await Promise.all([
+    read('videoResolutions'), read('videoDurations'), read('videoAspectRatios'), read('videoStyles'),
+  ]);
+  if (resolutions.length || durations.length || aspectRatios.length || styles.length) {
+    videoOptions = { at: Date.now(), resolutions, durations, aspectRatios, styles };
+    log(`video options: ${resolutions.length} resolution(s), ${durations.length} duration(s), `
+      + `${aspectRatios.length} ratio(s), ${styles.length} style(s)`);
+  }
+  return videoOptions;
+}
+
+// A style may be named rather than pasted: --style Documentary resolves to that
+// preset's preprompt, which is what the web client actually sends.
+function stylePreprompt(text) {
+  const wanted = String(text).trim().toLowerCase();
+  const hit = videoOptions.styles.find((v) =>
+    String(v.name_en ?? '').toLowerCase() === wanted || String(v.name_th ?? '').trim() === String(text).trim());
+  return hit?.preprompt ?? text;
+}
 
 // How many images a video model will take alongside the prompt, and in which
 // role. Not used to send anything yet; reported on /v1/models so a client can
@@ -202,21 +257,6 @@ function extractModels(decoded) {
         isDefault: v.isDefault === true,
         thinking: Array.isArray(v.thinkingConfig?.supportedLevels) ? v.thinkingConfig.supportedLevels : null,
         media: kind !== 'chat' && kind !== 'research',
-        // What this model will actually take beyond a prompt. Only video has a
-        // surface worth reporting; everything else is uniform.
-        options: kind === 'video'
-          ? {
-              provider: videoProviderOf(id) ?? null,
-              aspectRatio: true,
-              stylePreprompt: true,
-              // Only seedance takes these; the app omits them for everything else.
-              duration: /^seedance/i.test(id),
-              cameraFixed: /^seedance/i.test(id),
-              generateAudio: /^seedance/i.test(id),
-              resolutions: VIDEO_RESOLUTIONS[id] ?? null,
-              images: VIDEO_IMAGE_LIMITS[id] ?? null,
-            }
-          : null,
       });
     }
     Object.values(v).forEach(walk);
@@ -499,7 +539,10 @@ function startChat({ modelId, text, parts, aspectRatio: ratio, thinkingLevel, vi
       kind: isVideo ? 'video' : 'chat',
       modelId, text, parts, conversationId, aspectRatio: ratio, thinkingLevel,
       temporary: conversationIsTemporary,
-      video: isVideo ? { ...video, aspectRatio: video?.aspectRatio ?? ratio } : undefined,
+      // No aspect-ratio fallback here: videoOptionsFor already read the request
+      // and dropped a ratio this provider is not served. Re-adding the raw value
+      // would put back exactly what validation just removed.
+      video: isVideo ? video : undefined,
       timeoutMs: ['video', 'music'].includes(kindOf(modelId)) ? MEDIA_TIMEOUT_MS : IDLE_TIMEOUT_MS,
       onDelta: (part) => { delivered++; onDelta(part); },
       onDone,
@@ -777,30 +820,70 @@ const oaiError = (res, status, message, type = 'invalid_request_error') =>
 // The video options a request may carry, filtered to what the model will take.
 // The app gates only `resolution` by model and sends the rest whenever they are
 // set, so this does the same rather than inventing stricter rules of its own.
+// What a model will take beyond a prompt. Computed when the response is built,
+// never cached onto the model — the video loaders land after the model list, so
+// a surface baked in at fetch time reports the fallback for the rest of the run.
+function optionSurface(id) {
+  if (kindOf(id) !== 'video') return null;
+  const provider = videoProviderOf(id);
+  const served = valuesFor(videoOptions.resolutions, provider);
+  return {
+    provider: provider ?? null,
+    aspectRatio: true,
+    stylePreprompt: true,
+    duration: /^seedance/i.test(id),
+    cameraFixed: /^seedance/i.test(id),
+    generateAudio: /^seedance/i.test(id),
+    resolutions: served.length ? served : (VIDEO_RESOLUTIONS_FALLBACK[provider] ?? null),
+    durations: valuesFor(videoOptions.durations, provider),
+    aspectRatios: valuesFor(videoOptions.aspectRatios, provider),
+    images: VIDEO_IMAGE_LIMITS[id] ?? null,
+  };
+}
+
 function videoOptionsFor(modelId, payload) {
   if (kindOf(modelId) !== 'video') return undefined;
   const bool = (v) => (typeof v === 'boolean' ? v : undefined);
+  const provider = videoProviderOf(modelId);
   // The app attaches these four only for a seedance model; veo and sora take
   // the prompt, the aspect ratio and the style, and nothing else.
   const seedance = /^seedance/i.test(modelId);
-  // A model absent from the table has no resolution concept at all — the web UI
-  // shows no control for it and never puts one on the wire. The app's own guard
-  // is looser (it passes anything for an unlisted model) but only because the UI
-  // has already constrained the choice; matching the wire is what matters here.
+
+  // What this provider is actually offered, straight from the loaders. Falling
+  // back to the bundle's table only matters when no tab is attached to ask.
+  const served = valuesFor(videoOptions.resolutions, provider);
+  const allowed = served.length ? served : (VIDEO_RESOLUTIONS_FALLBACK[provider] ?? []);
+  const durations = valuesFor(videoOptions.durations, provider);
+  const ratios = valuesFor(videoOptions.aspectRatios, provider);
+
+  const drop = (what, value, list) =>
+    log(`warning: ${modelId} does not offer ${what} ${value}${list.length ? ` (${list.join(', ')})` : ''}`);
+
   const resolution = String(payload.resolution ?? '').trim();
-  const allowed = VIDEO_RESOLUTIONS[modelId];
-  if (resolution && !allowed?.includes(resolution)) {
-    log(`warning: ${modelId} does not offer resolution ${resolution}${allowed ? ` (${allowed.join(', ')})` : ''}`);
-  }
+  const okResolution = Boolean(resolution) && allowed.includes(resolution);
+  if (resolution && !okResolution) drop('resolution', resolution, allowed);
+
   const duration = Number(payload.duration);
+  // Durations are a served short list, not a free number. Sending one outside it
+  // is accepted at submit and rejected later, once the quota is already spent.
+  const okDuration = Number.isFinite(duration) && duration > 0
+    && (!durations.length || durations.includes(duration));
+  if (Number.isFinite(duration) && !okDuration) drop('duration', duration, durations);
+
+  const ratio = String(payload.aspect_ratio ?? payload.aspectRatio ?? '').trim();
+  const okRatio = Boolean(ratio) && (!ratios.length || ratios.includes(ratio));
+  if (ratio && !okRatio) drop('aspect ratio', ratio, ratios);
+
+  const style = payload.style_preprompt ?? payload.stylePreprompt;
+
   return {
-    provider: videoProviderOf(modelId),
-    ...(payload.aspect_ratio || payload.aspectRatio ? { aspectRatio: String(payload.aspect_ratio ?? payload.aspectRatio) } : {}),
-    // A style is sent as its preprompt text, not as an id: the app looks the
-    // preset up in /loaders/list-video-styles and posts the `preprompt` field.
-    ...(payload.style_preprompt || payload.stylePreprompt ? { stylePreprompt: String(payload.style_preprompt ?? payload.stylePreprompt) } : {}),
-    ...(seedance && resolution && allowed?.includes(resolution) ? { resolution } : {}),
-    ...(seedance && Number.isFinite(duration) && duration > 0 ? { duration } : {}),
+    provider,
+    ...(okRatio ? { aspectRatio: ratio } : {}),
+    // A style is sent as its preprompt text, not as an id. A caller may name the
+    // preset instead — "Documentary" — and it is resolved to that text here.
+    ...(style ? { stylePreprompt: stylePreprompt(String(style)) } : {}),
+    ...(seedance && okResolution ? { resolution } : {}),
+    ...(seedance && okDuration ? { duration } : {}),
     ...(seedance && bool(payload.camera_fixed ?? payload.cameraFixed) !== undefined ? { cameraFixed: bool(payload.camera_fixed ?? payload.cameraFixed) } : {}),
     ...(seedance && bool(payload.generate_audio ?? payload.generateAudio) !== undefined ? { generateAudio: bool(payload.generate_audio ?? payload.generateAudio) } : {}),
   };
@@ -957,6 +1040,7 @@ function extEvents(req, res) {
   const warm = (fn, ms) => setTimeout(() => { if (extClients.has(client)) fn().catch(() => {}); }, ms);
   warm(() => listModels({ force: true }), 500);
   warm(() => getQuota({ force: true }), 900);
+  warm(() => refreshVideoOptions(), 1300);
 
   const ping = setInterval(() => res.write(': ping\n\n'), 15_000);
   req.on('close', () => {
@@ -1040,7 +1124,7 @@ const server = http.createServer(async (req, res) => {
           id: m.id, object: 'model', created: 0, owned_by: m.provider ?? 'aipass',
           name: m.name, free_credit: m.free, thinking: m.thinking,
           kind: m.kind, description: m.description, is_default: m.isDefault,
-          ...(m.options ? { options: m.options } : {}),
+          ...(optionSurface(m.id) ? { options: optionSurface(m.id) } : {}),
         })),
       });
     }
@@ -1118,6 +1202,20 @@ const server = http.createServer(async (req, res) => {
       } catch (err) {
         return oaiError(res, 502, err.message);
       }
+    }
+
+    if (path === '/video-options' && req.method === 'GET') {
+      if (url.searchParams.get('refresh') === '1' || !videoOptions.at) await refreshVideoOptions();
+      return json(res, 200, {
+        styles: videoOptions.styles.map((v) => ({
+          name: v.name_en, nameTh: v.name_th, preprompt: v.preprompt,
+        })),
+        byProvider: Object.fromEntries(VIDEO_PROVIDERS.map(([provider]) => [provider, {
+          resolutions: valuesFor(videoOptions.resolutions, provider),
+          durations: valuesFor(videoOptions.durations, provider),
+          aspectRatios: valuesFor(videoOptions.aspectRatios, provider),
+        }])),
+      });
     }
 
     if (path === '/config' && req.method === 'POST') {
