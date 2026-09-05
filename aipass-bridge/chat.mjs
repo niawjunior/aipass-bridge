@@ -33,6 +33,11 @@ if (argv.includes('--help') || argv.includes('-h')) {
   --no-audio          do not generate a soundtrack with the video
   --style NAME        a video style — name a preset ("Documentary") or pass raw
                       preprompt text; npm run styles lists them
+  --image-style NAME  an image style preset ("Anime", "อนิเมะ")
+  --tone NAME         concise, detailed, step_by_step, friendly, academic,
+                      storytelling
+  --format NAME       markdown, bullet_points, table, code_block, paragraph,
+                      numbered_list
   --out DIR           where to save generated images, video and music
                                             (default: the cwd)
   --paste-idle MS     how long to wait before treating pasted lines as one
@@ -54,6 +59,9 @@ const THINKING = flag('thinking', null);
 const RESOLUTION = flag('resolution', null);
 const DURATION = flag('duration', null);
 const STYLE = flag('style', null);
+const IMAGE_STYLE = flag('image-style', null);
+const TONE = flag('tone', null);
+const FORMAT = flag('format', null);
 const CAMERA_FIXED = argv.includes('--camera-fixed');
 const NO_AUDIO = argv.includes('--no-audio');
 // Repeatable, unlike the other flags: several files can be attached at once.
@@ -219,6 +227,9 @@ async function ask(text) {
       ...(RESOLUTION ? { resolution: RESOLUTION } : {}),
       ...(DURATION ? { duration: Number(DURATION) } : {}),
       ...(STYLE ? { style_preprompt: STYLE } : {}),
+      ...(IMAGE_STYLE ? { image_style: IMAGE_STYLE } : {}),
+      ...(TONE ? { output_tone: TONE } : {}),
+      ...(FORMAT ? { output_format: FORMAT } : {}),
       ...(CAMERA_FIXED ? { camera_fixed: true } : {}),
       ...(NO_AUDIO ? { generate_audio: false } : {}),
     }),

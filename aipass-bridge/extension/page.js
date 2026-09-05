@@ -265,6 +265,11 @@
         // The levels a model advertises in thinkingConfig.supportedLevels —
         // low | medium | high, and max on Claude Opus. The bridge validates.
         ...(job.thinkingLevel ? { thinkingLevel: job.thinkingLevel } : {}),
+        // A style preset for an image model, by id; tone and format apply to any
+        // model and travel as the codes the output-styles loader publishes.
+        ...(job.imageStyleId ? { imageStyleId: job.imageStyleId } : {}),
+        ...(job.outputTone ? { outputTone: job.outputTone } : {}),
+        ...(job.outputFormat ? { outputFormat: job.outputFormat } : {}),
         messages: [{
           id: crypto.randomUUID(),
           role: 'user',

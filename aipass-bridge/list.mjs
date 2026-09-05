@@ -46,6 +46,16 @@ try {
       }
       console.log(`\nUse the name: npm run chat -- --style ${JSON.stringify(styles[0].name)}\n`);
     }
+    const st = await get('/style-options?refresh=1');
+    if (st.imageStyles.length) {
+      console.log('\nรูปภาพสไตล์ · image styles');
+      console.log('  ' + st.imageStyles.map((v) => v.name).join(' · '));
+    }
+    if (st.tones.length) {
+      console.log('\nโทนคำตอบ · tone      ' + st.tones.map((v) => v.code).join(' · '));
+      console.log('รูปแบบคำตอบ · format  ' + st.formats.map((v) => v.code).join(' · '));
+    }
+    console.log('\nวิดีโอ · what each video provider accepts\n');
     for (const [provider, o] of Object.entries(byProvider)) {
       const parts = [
         o.resolutions.length ? `resolution ${o.resolutions.join('/')}` : '',
