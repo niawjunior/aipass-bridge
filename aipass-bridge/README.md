@@ -264,6 +264,11 @@ or once, for every run:
 Run it twice and it reports the one that exists rather than making another;
 `--force` overrides that, `--name` and `--model` change what it makes.
 
+`--start-chat` goes one step further and opens a conversation already bound to
+the assistant, pointing the bridge at it — which is the step that used to mean
+opening the web UI and copying an id out of the address bar. `--delete ID`
+removes one, so a mistake can be cleaned up from the same command that made it.
+
 <details>
 <summary>Doing it by hand instead</summary>
 
@@ -1004,7 +1009,7 @@ chat. Only the last user message is forwarded.
 npm test
 ```
 
-130 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
+133 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
 bridge as a subprocess and a scriptable stand-in for the extension, so tests
 drive the actual HTTP surface and the real CLIs rather than mocks of them.
 

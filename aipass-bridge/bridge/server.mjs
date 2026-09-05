@@ -1066,8 +1066,12 @@ async function extPost(req, res, kind) {
     if (typeof body.raw === 'string') job.done(body.raw);
     else job.fail(body.message ?? 'loader fetch failed');
   } else if (kind === 'assistant') {
-    if (body.assistantId) job.done(body.assistantId);
-    else job.fail(body.message ?? 'assistant creation failed');
+    // One channel for three shapes: a created id, a bound conversation, or a
+    // deletion. The caller knows which it asked for.
+    if (body.conversationId) job.done(body.conversationId);
+    else if (body.deleted) job.done('deleted');
+    else if (body.assistantId) job.done(body.assistantId);
+    else job.fail(body.message ?? 'assistant action failed');
   } else job.fail(body.message ?? 'extension reported an error');
   return json(res, 200, { ok: true });
 }
@@ -1199,6 +1203,49 @@ const server = http.createServer(async (req, res) => {
         });
         log(`created assistant ${id} (${spec.name})`);
         return json(res, 200, { id, name: spec.name });
+      } catch (err) {
+        return oaiError(res, 502, err.message);
+      }
+    }
+
+    // Start a conversation already bound to an assistant, so nobody has to open
+    // the web UI and copy an id out of the address bar.
+    if (path.startsWith('/assistants/') && path.endsWith('/chat') && req.method === 'POST') {
+      const assistantId = decodeURIComponent(path.slice('/assistants/'.length, -'/chat'.length));
+      if (!assistantId) return oaiError(res, 400, 'assistant id is required');
+      try {
+        const conversationId = await new Promise((resolve, reject) => {
+          const job = new Job({
+            kind: 'assistant', spec: { op: 'start-chat', assistantId }, timeoutMs: 60_000,
+            onDelta: () => {}, onDone: resolve, onError: (m) => reject(new Error(m)),
+          });
+          job.dispatch();
+        });
+        // Adopt it, the way /conversations/new does — the point of binding is
+        // that the next message goes to it.
+        conversationCache = conversationId;
+        conversationIsTemporary = false;
+        conversationIndex = 0;
+        log(`assistant ${assistantId} -> conversation ${conversationId}`);
+        return json(res, 200, { assistantId, conversation: conversationId });
+      } catch (err) {
+        return oaiError(res, 502, err.message);
+      }
+    }
+
+    if (path.startsWith('/assistants/') && req.method === 'DELETE') {
+      const assistantId = decodeURIComponent(path.slice('/assistants/'.length));
+      if (!assistantId) return oaiError(res, 400, 'assistant id is required');
+      try {
+        await new Promise((resolve, reject) => {
+          const job = new Job({
+            kind: 'assistant', spec: { op: 'delete', assistantId }, timeoutMs: 60_000,
+            onDelta: () => {}, onDone: resolve, onError: (m) => reject(new Error(m)),
+          });
+          job.dispatch();
+        });
+        log(`deleted assistant ${assistantId}`);
+        return json(res, 200, { deleted: assistantId });
       } catch (err) {
         return oaiError(res, 502, err.message);
       }
