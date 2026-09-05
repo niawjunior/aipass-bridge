@@ -110,6 +110,7 @@ const LOADERS = {
   // Unlike the other two this one answers with plain JSON and takes no _routes
   // parameter, so it is parsed rather than turbo-stream decoded.
   quota: '/loaders/get-usage-quota',
+  assistants: '/loaders/list-ai-assistants.data?_routes=routes%2Floaders%2Flist-ai-assistants',
 };
 
 // list-models carries no category field — the tabs in the web UI (สนทนา,
@@ -240,7 +241,7 @@ const sendToClient = (client, event, data) =>
   client.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
 class Job {
-  constructor({ kind = 'chat', modelId, text, parts, conversationId, aspectRatio: ratio, url, message, requestId, assistant, assistantField, temporary, thinkingLevel, video, timeoutMs, onDelta, onDone, onError }) {
+  constructor({ kind = 'chat', modelId, text, parts, conversationId, aspectRatio: ratio, url, message, requestId, assistant, assistantField, temporary, thinkingLevel, video, spec, timeoutMs, onDelta, onDone, onError }) {
     this.id = randomUUID();
     this.kind = kind;
     this.url = url;
@@ -251,6 +252,7 @@ class Job {
     this.temporary = temporary;
     this.thinkingLevel = thinkingLevel;
     this.video = video;
+    this.spec = spec;
     this.timeoutMs = timeoutMs ?? IDLE_TIMEOUT_MS;
     this.modelId = modelId;
     this.text = text;
@@ -276,6 +278,8 @@ class Job {
       ? { jobId: this.id, kind: 'loader', url: this.url }
       : this.kind === 'create'
       ? { jobId: this.id, kind: 'create', modelId: this.modelId, message: this.message, requestId: this.requestId, assistant: this.assistant, assistantField: this.assistantField, temporary: this.temporary }
+      : this.kind === 'assistant'
+      ? { jobId: this.id, kind: 'assistant', ...this.spec }
       : this.kind === 'video'
       ? { jobId: this.id, kind: 'video', conversationId: this.conversationId, modelId: this.modelId, text: this.text, ...this.video }
       : { jobId: this.id, kind: 'chat', conversationId: this.conversationId, modelId: this.modelId, text: this.text, parts: this.parts, aspectRatio: this.aspectRatio, temporary: this.temporary, thinkingLevel: this.thinkingLevel });
@@ -977,6 +981,9 @@ async function extPost(req, res, kind) {
   else if (kind === 'loader') {
     if (typeof body.raw === 'string') job.done(body.raw);
     else job.fail(body.message ?? 'loader fetch failed');
+  } else if (kind === 'assistant') {
+    if (body.assistantId) job.done(body.assistantId);
+    else job.fail(body.message ?? 'assistant creation failed');
   } else job.fail(body.message ?? 'extension reported an error');
   return json(res, 200, { ok: true });
 }
@@ -1054,6 +1061,65 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // The custom assistant that carries the agent's tool protocol. Listing is a
+    // plain loader read; creating goes through the extension, which owns the
+    // path and the intents it will post.
+    if (path === '/assistants' && req.method === 'GET') {
+      try {
+        const decoded = decodeTurboStream(await fetchLoader(LOADERS.assistants));
+        const found = [];
+        const walk = (v) => {
+          if (!v || typeof v !== 'object') return;
+          if (Array.isArray(v)) return void v.forEach(walk);
+          if (typeof v.id === 'string' && typeof (v.name ?? v.assistantName) === 'string') {
+            found.push({ id: v.id, name: v.name ?? v.assistantName, model: v.model ?? v.modelId ?? null });
+          }
+          Object.values(v).forEach(walk);
+        };
+        walk(decoded);
+        const seen = new Set();
+        return json(res, 200, { assistants: found.filter((a) => !seen.has(a.id) && seen.add(a.id)) });
+      } catch (err) {
+        return oaiError(res, 502, `could not list assistants: ${err.message}`);
+      }
+    }
+
+    if (path === '/assistants' && req.method === 'POST') {
+      const body = JSON.parse(await readBody(req) || '{}');
+      const spec = {
+        name: String(body.name ?? '').trim(),
+        detail: String(body.detail ?? '').trim(),
+        character: String(body.character ?? ''),
+        type: String(body.type ?? '').trim(),
+        model: String(body.model ?? '').trim(),
+        tags: Array.isArray(body.tags) ? body.tags.map(String).filter(Boolean) : [],
+      };
+      // The form enforces these before it will submit, so failing here saves a
+      // round trip and a half-made draft on the account.
+      const tooLong = spec.name.length > 100 ? 'name over 100 characters'
+        : spec.detail.length > 200 ? 'detail over 200 characters'
+        : spec.character.length > 1000 ? 'character over 1000 characters'
+        : '';
+      const missing = ['name', 'detail', 'character', 'type', 'model'].find((k) => !spec[k]);
+      if (missing) return oaiError(res, 400, `${missing} is required`);
+      if (!spec.tags.length) return oaiError(res, 400, 'at least one tag is required');
+      if (tooLong) return oaiError(res, 400, tooLong);
+
+      try {
+        const id = await new Promise((resolve, reject) => {
+          const job = new Job({
+            kind: 'assistant', spec, timeoutMs: 60_000,
+            onDelta: () => {}, onDone: resolve, onError: (m) => reject(new Error(m)),
+          });
+          job.dispatch();
+        });
+        log(`created assistant ${id} (${spec.name})`);
+        return json(res, 200, { id, name: spec.name });
+      } catch (err) {
+        return oaiError(res, 502, err.message);
+      }
+    }
+
     if (path === '/config' && req.method === 'POST') {
       const body = JSON.parse(await readBody(req) || '{}');
       if (typeof body.defaultModel === 'string' && body.defaultModel.trim()) {
@@ -1126,6 +1192,7 @@ const server = http.createServer(async (req, res) => {
     if (path === '/ext/done' && req.method === 'POST') return await extPost(req, res, 'done');
     if (path === '/ext/error' && req.method === 'POST') return await extPost(req, res, 'error');
     if (path === '/ext/loader' && req.method === 'POST') return await extPost(req, res, 'loader');
+    if (path === '/ext/assistant' && req.method === 'POST') return await extPost(req, res, 'assistant');
 
     if (path === '/status' || path === '/health') {
       return json(res, 200, {

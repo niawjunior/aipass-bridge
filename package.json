@@ -12,6 +12,7 @@
     "conversations": "node aipass-bridge/list.mjs conversations",
     "credits": "node aipass-bridge/list.mjs credits",
     "doctor": "node aipass-bridge/doctor.mjs",
+    "setup-assistant": "node aipass-bridge/setup-assistant.mjs",
     "dev:next": "next dev",
     "build": "next build",
     "start": "next start",

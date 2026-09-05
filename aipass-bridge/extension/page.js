@@ -524,6 +524,61 @@
     }
   }
 
+  // Creating a custom assistant, the way /ai-assistant/new does it: a draft is
+  // minted first, patched with the fields, then confirmed. The path and the
+  // intents are fixed here rather than taken from the job — the bridge can ask
+  // for an assistant, it cannot ask this page to post anywhere it likes.
+  const ASSISTANT_ACTION = '/actions/ai-assistant-actions';
+  const ASSISTANT_INTENTS = new Set(['createDraft', 'patchAssistant', 'confirmAssistant']);
+
+  async function postAssistant(fields, signal) {
+    if (!ASSISTANT_INTENTS.has(fields.intent)) throw new Error(`refusing intent: ${fields.intent}`);
+    const form = new FormData();
+    for (const [k, v] of Object.entries(fields)) {
+      if (v === undefined || v === null) continue;
+      // `tag` repeats rather than being a list, the same as the form does it.
+      if (Array.isArray(v)) v.forEach((one) => form.append(k, String(one)));
+      else form.append(k, String(v));
+    }
+    const res = await fetch(ASSISTANT_ACTION, {
+      method: 'POST', credentials: 'include', body: form, signal,
+    });
+    const text = await res.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch { /* the route can answer with a redirect body */ }
+    if (!res.ok) throw new Error(`${fields.intent} returned ${res.status}: ${text.slice(0, 300)}`);
+    if (data?.error) throw new Error(`${fields.intent}: ${JSON.stringify(data.error).slice(0, 300)}`);
+    return data ?? {};
+  }
+
+  async function runAssistant(job) {
+    const controller = new AbortController();
+    inflight.set(job.jobId, controller);
+    try {
+      const draft = await postAssistant({ intent: 'createDraft' }, controller.signal);
+      const assistantId = draft.assistantId ?? draft.id ?? draft.data?.assistantId;
+      if (!assistantId) throw new Error(`createDraft returned no assistantId: ${JSON.stringify(draft).slice(0, 300)}`);
+
+      await postAssistant({
+        intent: 'patchAssistant',
+        assistantId,
+        assistantName: job.name,
+        detail: job.detail,
+        character: job.character,
+        type: job.type,
+        model: job.model,
+        tag: job.tags,
+      }, controller.signal);
+
+      const confirmed = await postAssistant({ intent: 'confirmAssistant', assistantId }, controller.signal);
+      reply({ jobId: job.jobId, kind: 'assistant', assistantId, raw: JSON.stringify(confirmed).slice(0, 2000) });
+    } catch (err) {
+      reply({ jobId: job.jobId, kind: 'assistant', message: String(err?.message ?? err) });
+    } finally {
+      inflight.delete(job.jobId);
+    }
+  }
+
   window.addEventListener('message', (event) => {
     if (window.__aipassBridgeGen !== GEN) return; // superseded by a newer injection
     if (event.source !== window) return;
@@ -533,6 +588,7 @@
       const fn = msg.job.kind === 'loader' ? runLoader
         : msg.job.kind === 'create' ? runCreate
         : msg.job.kind === 'video' ? runVideo
+        : msg.job.kind === 'assistant' ? runAssistant
         : run;
       fn(msg.job);
     }

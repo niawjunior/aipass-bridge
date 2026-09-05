@@ -52,6 +52,7 @@ tab. The extension popup should read **Connected**.
 
 ```bash
 npm run doctor                                     # is every link working?
+npm run setup-assistant                            # one-time: the agent's assistant
 npm run chat -- "ช่วยสรุปข่าว AI วันนี้"         # chat, streaming
 npm run chat -- "แมวน่ารัก" --model gpt-image-2   # generate an image
 npm run chat -- "summarise this" --file report.pdf # ask about a document
