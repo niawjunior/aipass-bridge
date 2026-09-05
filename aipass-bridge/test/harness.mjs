@@ -84,6 +84,10 @@ export const modelsFixture = (models) => encodeTurboStream({
   'routes/loaders/list-models': { data: { models, gatewayFlash: null } },
 });
 
+export const assistantsFixture = (assistants) => encodeTurboStream({
+  'routes/loaders/list-ai-assistants': { data: { data: assistants, error: null } },
+});
+
 export const conversationsFixture = (conversations) => encodeTurboStream({
   'routes/loaders/list-converstaions': { data: { conversations, gatewayFlash: null } },
 });
@@ -161,7 +165,7 @@ const DEFAULT_CONVERSATIONS = [
 // Stands in for the extension. `onChat` receives the job plus an emitter and
 // decides what the upstream would have streamed back.
 export class FakeExtension {
-  constructor(base, { onChat, models = DEFAULT_MODELS, conversations = DEFAULT_CONVERSATIONS, quota = quotaFixture() } = {}) {
+  constructor(base, { onChat, models = DEFAULT_MODELS, conversations = DEFAULT_CONVERSATIONS, quota = quotaFixture(), assistants = [] } = {}) {
     this.base = base;
     this.quota = quota;
     this.onChat = onChat ?? (async (_job, e) => { await e.text('ok'); await e.done(); });
@@ -170,6 +174,8 @@ export class FakeExtension {
     this.chats = [];       // every chat job received
     this.created = [];     // every create-conversation job received
     this.videos = [];      // every video-generation job received
+    this.assistants = [];  // every assistant-creation job received
+    this.existingAssistants = assistants;
     this.loaders = [];     // every loader url received
   }
 
@@ -241,8 +247,14 @@ export class FakeExtension {
         ? this.quota
         : job.url.includes('list-conversations')
         ? conversationsFixture(this.conversations)
+        : job.url.includes('list-ai-assistants')
+        ? assistantsFixture(this.existingAssistants)
         : modelsFixture(this.models);
       return void this.post('/ext/loader', { jobId: job.jobId, raw });
+    }
+    if (job.kind === 'assistant') {
+      this.assistants.push(job);
+      return void this.post('/ext/assistant', { jobId: job.jobId, assistantId: `asst_fake_${this.assistants.length}` });
     }
     if (job.kind === 'video') this.videos.push(job);
     this.chats.push(job);

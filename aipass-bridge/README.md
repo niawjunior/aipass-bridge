@@ -82,6 +82,7 @@ unusual.
 | `npm run conversations` | list conversations and which is in use |
 | `npm run credits` | how much of the credit pool is left |
 | `npm run doctor` | check every link in the chain and name what is broken |
+| `npm run setup-assistant` | create the custom assistant the agent binds to |
 | `npm test` | run the test suite |
 
 Every script takes `--help`. Note the `--` separator: `npm run doctor --help`
@@ -235,7 +236,37 @@ constraint: it sends one message at a time and lets the model drive with the
 ## Set up the coding assistant (one time)
 
 The file-editing agent works best when aipass itself carries the tool protocol,
-rather than the agent resending it every run. Create a custom assistant once at
+rather than the agent resending it every run. It is **optional** — the agent
+sends the protocol itself otherwise — but it saves that on every run and lets
+you put the agent on a model that holds the format well.
+
+```bash
+npm run setup-assistant
+```
+
+That creates it for you and prints the id:
+
+```
+creating  Local File Coder  on claude-sonnet-5@default, 958 characters of protocol
+
+✓ created  01a0c4f2-...
+
+Point the agent at it — either per run:
+
+  npm run agent -- "your task" --root . --assistant 01a0c4f2-...
+
+or once, for every run:
+
+  export AIPASS_ASSISTANT_ID=01a0c4f2-...
+```
+
+Run it twice and it reports the one that exists rather than making another;
+`--force` overrides that, `--name` and `--model` change what it makes.
+
+<details>
+<summary>Doing it by hand instead</summary>
+
+Create a custom assistant at
 [`/ai-assistant/new`](https://de.aipass.net/ai-assistant/new) and fill it in:
 
 | Field | Value |
@@ -275,6 +306,12 @@ Rules. Write prose in the user's language; keep action lines exactly as shown. E
 Save it, then start one chat with it in the UI and copy the conversation id from
 the URL. Run the agent against that conversation with `--slim` (see below), or
 wire the bridge to create bound conversations automatically — also below.
+
+</details>
+
+The prompt above is the same text `npm run setup-assistant` installs — it lives
+in `assistant-prompt.mjs`, and a test asserts the block in this file still
+matches it, so the copy you paste by hand cannot drift from the automated one.
 
 ## Local file tools
 
@@ -944,7 +981,7 @@ chat. Only the last user message is forwarded.
 npm test
 ```
 
-118 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
+125 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
 bridge as a subprocess and a scriptable stand-in for the extension, so tests
 drive the actual HTTP surface and the real CLIs rather than mocks of them.
 
