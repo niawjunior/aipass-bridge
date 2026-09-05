@@ -282,6 +282,12 @@ export class FakeExtension {
     }
     if (job.kind === 'assistant') {
       this.assistants.push(job);
+      if (job.op === 'start-chat') {
+        return void this.post('/ext/assistant', { jobId: job.jobId, assistantId: job.assistantId, conversationId: 'bound1234bound12' });
+      }
+      if (job.op === 'delete') {
+        return void this.post('/ext/assistant', { jobId: job.jobId, assistantId: job.assistantId, deleted: true });
+      }
       return void this.post('/ext/assistant', { jobId: job.jobId, assistantId: `asst_fake_${this.assistants.length}` });
     }
     if (job.kind === 'video') this.videos.push(job);

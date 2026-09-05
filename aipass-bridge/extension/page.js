@@ -529,7 +529,11 @@
   // intents are fixed here rather than taken from the job — the bridge can ask
   // for an assistant, it cannot ask this page to post anywhere it likes.
   const ASSISTANT_ACTION = '/actions/ai-assistant-actions';
-  const ASSISTANT_INTENTS = new Set(['createDraft', 'patchAssistant', 'confirmAssistant']);
+  const ASSISTANT_START_CHAT = '/actions/ai-assistant-start-chat';
+  // `delete` is here so a mistake can be cleaned up from the CLI that made it.
+  // pin, unpin, track-usage and deleteFile exist upstream and are deliberately
+  // left out until something needs them.
+  const ASSISTANT_INTENTS = new Set(['createDraft', 'patchAssistant', 'confirmAssistant', 'delete']);
 
   async function postAssistant(fields, signal) {
     if (!ASSISTANT_INTENTS.has(fields.intent)) throw new Error(`refusing intent: ${fields.intent}`);
@@ -551,10 +555,35 @@
     return data ?? {};
   }
 
+  // Starting a bound chat is its own route and takes one field. It is what
+  // removes copying a conversation id out of the address bar.
+  async function startAssistantChat(assistantId, signal) {
+    const form = new FormData();
+    form.append('aiAssistantId', assistantId);
+    const res = await fetch(ASSISTANT_START_CHAT, { method: 'POST', credentials: 'include', body: form, signal });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`start-chat returned ${res.status}: ${text.slice(0, 300)}`);
+    let data = null;
+    try { data = JSON.parse(text); } catch { /* may answer with a redirect body */ }
+    // The id can arrive under several names, or only inside a redirect target.
+    const id = data?.conversationId ?? data?.id ?? data?.conversation?.id
+      ?? (text.match(/\/chat\/([A-Za-z0-9]{8,})/) ?? [])[1];
+    if (!id) throw new Error(`start-chat returned no conversation: ${text.slice(0, 300)}`);
+    return id;
+  }
+
   async function runAssistant(job) {
     const controller = new AbortController();
     inflight.set(job.jobId, controller);
     try {
+      if (job.op === 'start-chat') {
+        const conversationId = await startAssistantChat(job.assistantId, controller.signal);
+        return void reply({ jobId: job.jobId, kind: 'assistant', assistantId: job.assistantId, conversationId });
+      }
+      if (job.op === 'delete') {
+        await postAssistant({ intent: 'delete', assistantId: job.assistantId }, controller.signal);
+        return void reply({ jobId: job.jobId, kind: 'assistant', assistantId: job.assistantId, deleted: true });
+      }
       const draft = await postAssistant({ intent: 'createDraft' }, controller.signal);
       const assistantId = draft.assistantId ?? draft.id ?? draft.data?.assistantId;
       if (!assistantId) throw new Error(`createDraft returned no assistantId: ${JSON.stringify(draft).slice(0, 300)}`);
