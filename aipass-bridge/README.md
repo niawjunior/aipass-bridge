@@ -174,6 +174,29 @@ on its own. Attachments ride on the first message only — they stay in the
 conversation afterwards, and re-uploading them each turn would just spend
 credits.
 
+### Styles, tone and format
+
+Three more presets the service publishes, all resolved by name so nothing has to
+be pasted:
+
+```bash
+npm run chat -- --model gpt-image-2 --image-style Anime "แมวน่ารัก"
+npm run chat -- --tone concise --format bullet_points "อธิบายว่า HTTP คืออะไร"
+```
+
+An **image style** is sent as `imageStyleId`, by id — unlike a video style, which
+travels as its preprompt text. **Tone** (concise, detailed, step_by_step,
+friendly, academic, storytelling) and **format** (markdown, bullet_points, table,
+code_block, paragraph, numbered_list) travel as the codes the loader publishes,
+and apply to any model. Each accepts the English name, the Thai name, or the code
+itself; anything matching no preset is dropped with a warning rather than sent as
+a string the server will not recognise. `npm run styles` lists all of them.
+
+Image *aspect ratios* are published too, but they are reported rather than
+enforced: the loader keys them inconsistently — by model id for one family, by
+provider for another, and OpenAI's are pixel dimensions (`1056x704`) rather than
+ratios. Enforcing a mapping that ambiguous would break ratios that work today.
+
 ### Fields beyond the OpenAI schema
 
 All of these are ignored by clients that do not know them, and each is dropped
@@ -1019,7 +1042,7 @@ chat. Only the last user message is forwarded.
 npm test
 ```
 
-133 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
+136 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
 bridge as a subprocess and a scriptable stand-in for the extension, so tests
 drive the actual HTTP surface and the real CLIs rather than mocks of them.
 

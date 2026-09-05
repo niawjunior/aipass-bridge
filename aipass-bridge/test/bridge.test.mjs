@@ -811,3 +811,47 @@ test('models report the served surface, not what was cached at startup', async (
     'veo gets the "all" rows and none of seedance\'s');
   assert.equal(byId['veo-3.1-fast-generate-001'].options.resolutions, null);
 });
+
+// Image styles are sent by id; tone and format by the code the loader publishes.
+// Passing the display name straight through would send a string the server does
+// not recognise, so each is resolved or dropped.
+test('an image style is resolved to its id, by any name it is known by', async (t) => {
+  const ext = await new FakeExtension(bridge.base).connect();
+  t.after(() => ext.disconnect());
+  await waitFor(async () => (await (await fetch(`${bridge.base}/style-options?refresh=1`)).json()).imageStyles.length > 0);
+
+  const send = async (body) => {
+    await post({ model: 'gpt-image-2', messages: [{ role: 'user', content: 'a cat' }], ...body });
+    return ext.chats.at(-1);
+  };
+  assert.equal((await send({ image_style: 'Anime' })).imageStyleId, 'img_anime');
+  assert.equal((await send({ image_style: 'อนิเมะ' })).imageStyleId, 'img_anime', 'the Thai name works');
+  assert.equal((await send({ image_style: 'img_minimal' })).imageStyleId, 'img_minimal', 'the id works');
+  assert.equal((await send({ image_style: 'Nonexistent' })).imageStyleId, undefined, 'an unknown preset is dropped');
+});
+
+test('an image style is not sent to a chat model', async (t) => {
+  const ext = await new FakeExtension(bridge.base).connect();
+  t.after(() => ext.disconnect());
+  await waitFor(async () => (await (await fetch(`${bridge.base}/style-options?refresh=1`)).json()).imageStyles.length > 0);
+
+  await post({ model: 'gemini-3.1-flash-lite', messages: [{ role: 'user', content: 'hi' }], image_style: 'Anime' });
+  assert.equal(ext.chats.at(-1).imageStyleId, undefined);
+});
+
+test('tone and format travel as codes and apply to any model', async (t) => {
+  const ext = await new FakeExtension(bridge.base).connect();
+  t.after(() => ext.disconnect());
+  await waitFor(async () => (await (await fetch(`${bridge.base}/style-options?refresh=1`)).json()).tones.length > 0);
+
+  await post({
+    model: 'gemini-3.1-flash-lite', messages: [{ role: 'user', content: 'hi' }],
+    output_tone: 'Concise', output_format: 'table',
+  });
+  const job = ext.chats.at(-1);
+  assert.equal(job.outputTone, 'concise', 'the display name resolves to the code');
+  assert.equal(job.outputFormat, 'table');
+
+  await post({ model: 'gemini-3.1-flash-lite', messages: [{ role: 'user', content: 'hi' }], output_tone: 'shouty' });
+  assert.equal(ext.chats.at(-1).outputTone, undefined, 'an unknown tone is dropped, not forwarded');
+});

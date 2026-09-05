@@ -117,6 +117,10 @@ const LOADERS = {
   videoDurations: '/loaders/list-video-durations.data?_routes=routes%2Floaders%2Flist-video-durations',
   videoAspectRatios: '/loaders/list-video-aspect-ratios.data?_routes=routes%2Floaders%2Flist-video-aspect-ratios',
   videoStyles: '/loaders/list-video-styles.data?_routes=routes%2Floaders%2Flist-video-styles',
+  // Image styles carry no preprompt — they are sent by id as imageStyleId,
+  // unlike a video style, which is sent as its preprompt text.
+  imageStyles: '/loaders/list-image-styles.data?_routes=routes%2Floaders%2Flist-image-styles',
+  outputStyles: '/loaders/list-output-styles.data?_routes=routes%2Floaders%2Flist-output-styles',
 };
 
 // list-models carries no category field — the tabs in the web UI (สนทนา,
@@ -167,6 +171,8 @@ const VIDEO_RESOLUTIONS_FALLBACK = { seedance: ['480p', '720p'] };
 
 // What the four video-option loaders returned, refreshed with the model list.
 let videoOptions = { at: 0, resolutions: [], durations: [], aspectRatios: [], styles: [] };
+// Image styles, and the tone/format presets that apply to any chat model.
+let styleOptions = { at: 0, imageStyles: [], tones: [], formats: [] };
 
 // Every one of those loaders answers with the same row shape, so one reader
 // covers all four: the first array of objects carrying a string id.
@@ -206,6 +212,42 @@ async function refreshVideoOptions() {
   }
   return videoOptions;
 }
+
+async function refreshStyleOptions() {
+  const read = async (key) => {
+    try { return decodeTurboStream(await fetchLoader(LOADERS[key])); }
+    catch { return null; }
+  };
+  const [imageDecoded, outputDecoded] = await Promise.all([read('imageStyles'), read('outputStyles')]);
+  const imageStyles = imageDecoded ? extractRows(imageDecoded) : [];
+  // Output styles answer with two named lists rather than one array, so they are
+  // picked out by name instead of going through extractRows.
+  let tones = [];
+  let formats = [];
+  const walk = (v) => {
+    if (!v || typeof v !== 'object') return;
+    if (Array.isArray(v.tones)) tones = v.tones;
+    if (Array.isArray(v.formats)) formats = v.formats;
+    Object.values(v).forEach(walk);
+  };
+  if (outputDecoded) walk(outputDecoded);
+  if (imageStyles.length || tones.length || formats.length) {
+    styleOptions = { at: Date.now(), imageStyles, tones, formats };
+    log(`styles: ${imageStyles.length} image, ${tones.length} tone(s), ${formats.length} format(s)`);
+  }
+  return styleOptions;
+}
+
+// Match a preset by its English name, its Thai name, or its code — whichever the
+// caller happened to have to hand.
+const matchPreset = (rows, wanted) => {
+  const want = String(wanted).trim().toLowerCase();
+  return rows.find((r) =>
+    String(r.name_en ?? r.nameEn ?? '').toLowerCase() === want
+    || String(r.name_th ?? r.nameTh ?? '').trim() === String(wanted).trim()
+    || String(r.code ?? '').toLowerCase() === want
+    || String(r.id ?? '').toLowerCase() === want);
+};
 
 // A style may be named rather than pasted: --style Documentary resolves to that
 // preset's preprompt, which is what the web client actually sends.
@@ -281,7 +323,7 @@ const sendToClient = (client, event, data) =>
   client.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 
 class Job {
-  constructor({ kind = 'chat', modelId, text, parts, conversationId, aspectRatio: ratio, url, message, requestId, assistant, assistantField, temporary, thinkingLevel, video, spec, timeoutMs, onDelta, onDone, onError }) {
+  constructor({ kind = 'chat', modelId, text, parts, conversationId, aspectRatio: ratio, url, message, requestId, assistant, assistantField, temporary, thinkingLevel, video, spec, imageStyleId, outputTone, outputFormat, timeoutMs, onDelta, onDone, onError }) {
     this.id = randomUUID();
     this.kind = kind;
     this.url = url;
@@ -293,6 +335,9 @@ class Job {
     this.thinkingLevel = thinkingLevel;
     this.video = video;
     this.spec = spec;
+    this.imageStyleId = imageStyleId;
+    this.outputTone = outputTone;
+    this.outputFormat = outputFormat;
     this.timeoutMs = timeoutMs ?? IDLE_TIMEOUT_MS;
     this.modelId = modelId;
     this.text = text;
@@ -322,7 +367,7 @@ class Job {
       ? { jobId: this.id, kind: 'assistant', ...this.spec }
       : this.kind === 'video'
       ? { jobId: this.id, kind: 'video', conversationId: this.conversationId, modelId: this.modelId, text: this.text, ...this.video }
-      : { jobId: this.id, kind: 'chat', conversationId: this.conversationId, modelId: this.modelId, text: this.text, parts: this.parts, aspectRatio: this.aspectRatio, temporary: this.temporary, thinkingLevel: this.thinkingLevel });
+      : { jobId: this.id, kind: 'chat', conversationId: this.conversationId, modelId: this.modelId, text: this.text, parts: this.parts, aspectRatio: this.aspectRatio, temporary: this.temporary, thinkingLevel: this.thinkingLevel, imageStyleId: this.imageStyleId, outputTone: this.outputTone, outputFormat: this.outputFormat });
   }
   delta(part) { if (!this.settled) { this.touch(); this.onDelta(part); } }
   done(value) { if (this.settled) return; this.cleanup(); this.onDone(value ?? 'stop'); }
@@ -520,7 +565,7 @@ async function resolveConversation() {
 
 // A 404 means the conversation was deleted; a 409 means the server still
 // believes a generation is running there. Neither recovers on its own.
-function startChat({ modelId, text, parts, aspectRatio: ratio, thinkingLevel, video, onDelta, onDone, onError }) {
+function startChat({ modelId, text, parts, aspectRatio: ratio, thinkingLevel, video, imageStyleId, outputTone, outputFormat, onDelta, onDone, onError }) {
   // A video model does not go through /actions/send-message at all — it is a
   // job submitted to /actions/video-generation and then polled. Same Job
   // machinery, different kind, so retries and aborts behave the same way.
@@ -538,6 +583,7 @@ function startChat({ modelId, text, parts, aspectRatio: ratio, thinkingLevel, vi
     current = new Job({
       kind: isVideo ? 'video' : 'chat',
       modelId, text, parts, conversationId, aspectRatio: ratio, thinkingLevel,
+      imageStyleId, outputTone, outputFormat,
       temporary: conversationIsTemporary,
       // No aspect-ratio fallback here: videoOptionsFor already read the request
       // and dropped a ratio this provider is not served. Re-adding the raw value
@@ -921,6 +967,22 @@ async function chatCompletions(req, res) {
   const thinking = String(payload.thinking_level ?? payload.thinkingLevel ?? '').trim().toLowerCase();
   const thinkingLevel = thinking ? thinkingLevelFor(model, thinking) : undefined;
   const video = videoOptionsFor(model, payload);
+
+  // An image style is sent by id; a tone and a format by their code. Each is
+  // resolved from whatever the caller named — English, Thai, or the code — and
+  // dropped with a warning when it matches no preset, rather than being passed
+  // through as a string the server will not recognise.
+  const preset = (rows, wanted, field, what) => {
+    if (!wanted) return undefined;
+    const hit = matchPreset(rows, wanted);
+    if (!hit) { log(`warning: no ${what} called ${wanted}`); return undefined; }
+    return hit[field];
+  };
+  const imageStyleId = kindOf(model) === 'image'
+    ? preset(styleOptions.imageStyles, payload.image_style ?? payload.imageStyle, 'id', 'image style')
+    : undefined;
+  const outputTone = preset(styleOptions.tones, payload.output_tone ?? payload.outputTone, 'code', 'tone');
+  const outputFormat = preset(styleOptions.formats, payload.output_format ?? payload.outputFormat, 'code', 'format');
   if (thinking && !thinkingLevel) log(`warning: ${model} does not offer thinking level ${thinking}`);
   const { text, parts } = await extractUserParts(payload.messages);
   if (!text && (!parts || parts.length === 0)) return oaiError(res, 400, 'no user message');
@@ -958,6 +1020,7 @@ async function chatCompletions(req, res) {
 
     const job = startChat({
       modelId: model, text, parts, aspectRatio: ratio, thinkingLevel, video,
+      imageStyleId, outputTone, outputFormat,
       onDelta: (part) => {
         if (part.kind === 'status') {
           if (TOOL_VISIBILITY === 'off') return;
@@ -991,6 +1054,7 @@ async function chatCompletions(req, res) {
   await new Promise((resolve) => {
     const job = startChat({
       modelId: model, text, parts, aspectRatio: ratio, thinkingLevel, video,
+      imageStyleId, outputTone, outputFormat,
       onDelta: (p) => {
         if (p.kind === 'status') { if (TOOL_VISIBILITY !== 'off') reasoning += `${p.text}\n`; return; }
         if (MEDIA_KINDS.has(p.kind)) { out += mediaMarkdown(p.kind, p.text, p.filename); return; }
@@ -1041,6 +1105,7 @@ function extEvents(req, res) {
   warm(() => listModels({ force: true }), 500);
   warm(() => getQuota({ force: true }), 900);
   warm(() => refreshVideoOptions(), 1300);
+  warm(() => refreshStyleOptions(), 1700);
 
   const ping = setInterval(() => res.write(': ping\n\n'), 15_000);
   req.on('close', () => {
@@ -1249,6 +1314,15 @@ const server = http.createServer(async (req, res) => {
       } catch (err) {
         return oaiError(res, 502, err.message);
       }
+    }
+
+    if (path === '/style-options' && req.method === 'GET') {
+      if (url.searchParams.get('refresh') === '1' || !styleOptions.at) await refreshStyleOptions();
+      return json(res, 200, {
+        imageStyles: styleOptions.imageStyles.map((v) => ({ id: v.id, name: v.name_en, nameTh: v.name_th })),
+        tones: styleOptions.tones.map((v) => ({ code: v.code, name: v.nameEn, nameTh: v.nameTh })),
+        formats: styleOptions.formats.map((v) => ({ code: v.code, name: v.nameEn, nameTh: v.nameTh })),
+      });
     }
 
     if (path === '/video-options' && req.method === 'GET') {

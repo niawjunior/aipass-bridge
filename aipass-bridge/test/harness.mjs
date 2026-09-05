@@ -113,6 +113,29 @@ export const DEFAULT_VIDEO_OPTIONS = {
   ],
 };
 
+export const imageStylesFixture = () => encodeTurboStream({
+  'routes/loaders/list-image-styles': { data: { data: [
+    { id: 'img_anime', name_en: 'Anime', name_th: 'อนิเมะ', sort_order: 0, is_active: true },
+    { id: 'img_minimal', name_en: 'Minimal', name_th: 'มินิมอล', sort_order: 1, is_active: true },
+  ], error: null } },
+});
+
+// Output styles answer with two named lists, not one array — which is why the
+// bridge picks them out by name rather than through extractRows.
+export const outputStylesFixture = () => encodeTurboStream({
+  'routes/loaders/list-output-styles': { data: {
+    tones: [
+      { id: 'tone_concise', code: 'concise', nameEn: 'Concise', nameTh: 'กระชับ' },
+      { id: 'tone_academic', code: 'academic', nameEn: 'Academic', nameTh: 'วิชาการ' },
+    ],
+    formats: [
+      { id: 'fmt_table', code: 'table', nameEn: 'Table', nameTh: 'ตาราง' },
+      { id: 'fmt_bullets', code: 'bullet_points', nameEn: 'Bullet Points', nameTh: 'หัวข้อย่อย' },
+    ],
+    ok: true,
+  } },
+});
+
 export const conversationsFixture = (conversations) => encodeTurboStream({
   'routes/loaders/list-converstaions': { data: { conversations, gatewayFlash: null } },
 });
@@ -275,6 +298,10 @@ export class FakeExtension {
         ? conversationsFixture(this.conversations)
         : job.url.includes('list-ai-assistants')
         ? assistantsFixture(this.existingAssistants)
+        : job.url.includes('list-image-styles')
+        ? imageStylesFixture()
+        : job.url.includes('list-output-styles')
+        ? outputStylesFixture()
         : /list-video-(resolutions|durations|aspect-ratios|styles)/.test(job.url)
         ? videoOptionFixture(job.url.match(/list-video-[a-z-]+/)[0], this.videoOptions[job.url.match(/list-video-[a-z-]+/)[0]] ?? [])
         : modelsFixture(this.models);
