@@ -433,6 +433,20 @@
             case 'source-url':
               if (evt.url && !sources.some((x) => x.url === evt.url)) sources.push({ url: evt.url, title: evt.title });
               break;
+            // The search itself reports its results on one frame carrying every
+            // link at once. Without this the frame fell through to the unknown
+            // handler, which printed its whole JSON body into the answer — and
+            // sonar, which sends only this frame and no source-url, listed its
+            // sources with blank titles.
+            case 'data-web_search_results': {
+              for (const link of evt.data?.links ?? evt.links ?? []) {
+                if (!link?.url) continue;
+                const found = sources.find((x) => x.url === link.url);
+                if (found) found.title ??= link.title;
+                else sources.push({ url: link.url, title: link.title, domain: link.domain });
+              }
+              break;
+            }
             case 'error':
               throw new Error(evt.errorText ?? evt.message ?? 'stream error');
             case 'finish':
@@ -452,7 +466,10 @@
       }
 
       if (sources.length) {
-        push('status', `sources:\n${sources.map((x) => `  - ${x.title ?? ''} ${x.url}`).join('\n')}`);
+        push('status', `sources:\n${sources.map((x) => {
+          const label = x.title || x.domain || new URL(x.url, location.origin).hostname;
+          return `  - ${label} ${x.url}`;
+        }).join('\n')}`);
       }
       flush();
       reply({ jobId: job.jobId, kind: 'done', finishReason });

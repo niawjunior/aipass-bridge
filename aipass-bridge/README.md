@@ -108,6 +108,11 @@ Tool activity is sent as `reasoning_content`, so an OpenAI client that only
 reads `content` sees a clean answer. `AIPASS_TOOL_VISIBILITY=text` inlines it,
 `off` drops it.
 
+**Web search is automatic, not a flag.** A model that supports it searches when
+the question needs it — the default `gemini-3.1-flash-lite` does, and answers
+current-events questions correctly with sources. The `sonar` models search every
+time by design. Nothing needs to be switched on.
+
 ## From code
 
 The endpoint is OpenAI-compatible, so any SDK works — point it at
@@ -1042,7 +1047,7 @@ chat. Only the last user message is forwarded.
 npm test
 ```
 
-136 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
+148 tests, no dependencies, a few seconds. `test/harness.mjs` runs the real
 bridge as a subprocess and a scriptable stand-in for the extension, so tests
 drive the actual HTTP surface and the real CLIs rather than mocks of them.
 
@@ -1054,6 +1059,13 @@ bytes on disk are unchanged; splitting a rejected turn; dropping a line that
 cannot be sent at any size; a premature `DONE` being ignored; recovery when the
 model drifts into prose; refusing paths outside the project root; and dry run
 leaving the disk untouched.
+
+**The content script is tested too, as of now.** `test/page-harness.mjs` runs
+`extension/page.js` in-process — it needs no DOM, only `window`, `location` and
+`fetch`, and Node has everything else it touches. That closes the gap that let
+several changes ship unexercised: the frame decoder, the media-type routing, the
+reattach, and the assistant job all have tests now. The first run of it found a
+fix that had been committed to a branch and never merged.
 
 `difflib.mjs` is cross-checked against GNU `diff` where the binary exists, and
 its output is verified to apply cleanly with `patch` — reconstructing the target
