@@ -24,7 +24,10 @@ const valid = {
 // The prompt someone pastes by hand and the one the script installs have to be
 // the same text, or the documented setup quietly stops matching the automated one.
 test('the README block and the shipped prompt are the same text', () => {
-  const readme = fs.readFileSync(path.join(here, '..', 'README.md'), 'utf8');
+  // A Windows checkout has CRLF throughout, so both the pattern and the
+  // captured block have to be compared on normalised endings — the prompt
+  // module normalises itself for the same reason.
+  const readme = fs.readFileSync(path.join(here, '..', 'README.md'), 'utf8').replace(/\r\n/g, '\n');
   const m = readme.match(/max 1000 characters — this is (\d+)\):\n\n```\n([\s\S]*?)\n```/);
   assert.ok(m, 'the README still documents the prompt in a fenced block');
   assert.equal(m[2], ASSISTANT_CHARACTER, 'README block has drifted from assistant-prompt.mjs');
