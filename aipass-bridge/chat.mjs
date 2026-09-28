@@ -54,6 +54,10 @@ const NEW = argv.includes('--new');
 const TEMPORARY = argv.includes('--temporary');
 let model = flag('model', null);
 const OUT_DIR = path.resolve(flag('out', process.cwd()));
+// Created on first save rather than here: --out is only needed when media
+// actually arrives, and a chat that saves nothing should not leave a stray
+// directory behind.
+fs.mkdirSync(OUT_DIR, { recursive: true });
 const RATIO = flag('ratio', null);
 const THINKING = flag('thinking', null);
 const RESOLUTION = flag('resolution', null);

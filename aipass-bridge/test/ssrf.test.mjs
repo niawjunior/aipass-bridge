@@ -4,6 +4,7 @@
 // are exercised directly, with fetch stubbed per hop.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
+import dns from 'node:dns/promises';
 
 process.env.AIPASS_PORT = '0'; // import starts the server; a random port collides with nothing
 const { isPrivateHost, fetchRemoteAsDataUri, server } = await import('../bridge/server.mjs');
@@ -97,6 +98,53 @@ test('a redirect into a non-http scheme is refused', async () => {
     assert.fail('a file: redirect must be refused');
   } catch (err) {
     assert.match(err.message, /unsupported protocol/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('a name that resolves to a private address is refused before fetching', async () => {
+  const realFetch = globalThis.fetch;
+  const realLookup = dns.lookup;
+  // The resolver is stubbed at the module, exactly the way the fetches below
+  // are stubbed on globalThis: no network, no flakiness, just the shape.
+  dns.lookup = async () => [{ address: '10.9.8.7', family: 4 }];
+  let fetched = 0;
+  globalThis.fetch = async () => { fetched += 1; throw new Error('must not be fetched'); };
+  try {
+    await fetchRemoteAsDataUri('http://rebind.example/x.png', 'image');
+    assert.fail('a name resolving into RFC1918 must be refused');
+  } catch (err) {
+    assert.match(err.message, /resolves to 10\.9\.8\.7/);
+    assert.equal(fetched, 0);
+  } finally {
+    globalThis.fetch = realFetch;
+    dns.lookup = realLookup;
+  }
+});
+
+test('a name resolving to public addresses fetches normally', async () => {
+  const realLookup = dns.lookup;
+  dns.lookup = async () => [{ address: '93.184.216.34', family: 4 }, { address: '2606:2800:220:1::1', family: 6 }];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } });
+  try {
+    const uri = await fetchRemoteAsDataUri('http://public.example/x.png', 'image');
+    assert.equal(uri, 'data:image/png;base64,AQ==');
+  } finally {
+    globalThis.fetch = realFetch;
+    dns.lookup = realLookup;
+  }
+});
+
+test('a huge announced content-length is refused without reading the body', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(new Uint8Array([1]), { status: 200, headers: { 'content-type': 'image/png', 'content-length': String(50 * 1024 * 1024) } });
+  try {
+    await fetchRemoteAsDataUri('http://public.example/huge.png', 'image');
+    assert.fail('an oversized attachment must be refused');
+  } catch (err) {
+    assert.match(err.message, /attachment too large/);
   } finally {
     globalThis.fetch = realFetch;
   }

@@ -226,11 +226,15 @@ export class FakeExtension {
     this.existingAssistants = assistants;
     this.videoOptions = videoOptions;
     this.loaders = [];     // every loader url received
+    this.aborts = [];      // every abort event received
+    this.token = '';       // per-run token, set from the ready event
   }
 
   post(p, body) {
+    const headers = { 'content-type': 'application/json' };
+    if (this.token) headers['x-aipass-token'] = this.token;
     return fetch(`${this.base}${p}`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      method: 'POST', headers, body: JSON.stringify(body),
     }).catch(() => {});
   }
 
@@ -275,8 +279,12 @@ export class FakeExtension {
             if (l.startsWith('event:')) name = l.slice(6).trim();
             else if (l.startsWith('data:')) data.push(l.slice(5).trim());
           }
-          if (!data.length || name !== 'job') continue;
-          this.#handle(JSON.parse(data.join('\n')));
+          if (!data.length) continue;
+          const parsed = JSON.parse(data.join('\n'));
+          if (name === 'ready') this.token = parsed.token ?? '';
+          if (name === 'abort') this.aborts.push(parsed.jobId);
+          if (name !== 'job') continue;
+          this.#handle(parsed);
         }
       }
     } catch { /* aborted */ }

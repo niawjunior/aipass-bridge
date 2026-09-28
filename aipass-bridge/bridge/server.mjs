@@ -8,6 +8,7 @@
 // back. The server owns the conversation and its history, exactly as it does
 // for the web UI, so there is nothing to reconstruct on this side.
 import http from 'node:http';
+import dns from 'node:dns/promises';
 import { randomUUID } from 'node:crypto';
 
 const PORT = Number(process.env.AIPASS_PORT ?? 8787);
@@ -18,6 +19,10 @@ const MODELS_FALLBACK = (process.env.AIPASS_MODELS ?? 'gemini-3.1-flash-lite,cla
 // 'reasoning' -> delta.reasoning_content, 'text' -> inline, 'off' -> dropped.
 const TOOL_VISIBILITY = process.env.AIPASS_TOOL_VISIBILITY ?? 'reasoning';
 const PINNED_CONVERSATION = process.env.AIPASS_CONVERSATION_ID ?? '';
+// How long a chat job waits for an extension to (re)connect before failing.
+// The service worker drops and rebuilds its stream every few minutes; a job
+// that lands inside that window is otherwise lost to a transient gap.
+const DISPATCH_GRACE_MS = Number(process.env.AIPASS_DISPATCH_GRACE_MS ?? 5000);
 const IDLE_TIMEOUT_MS = Number(process.env.AIPASS_IDLE_TIMEOUT_MS ?? 180_000);
 // Rendering a video or a music clip can go quiet for minutes at a stretch. The
 // timeout is on silence, not on total time, but three minutes of it is normal
@@ -54,6 +59,10 @@ const ASSISTANT_FIELD = process.env.AIPASS_ASSISTANT_FIELD ?? 'aiAssistantId';
 // it. Set AIPASS_CORS_ORIGIN only if you deliberately want a browser page to
 // call the bridge. Admin/deployment routes stay off unless AIPASS_ADMIN=1.
 const CORS_ORIGIN = process.env.AIPASS_CORS_ORIGIN ?? '';
+// A random per-run token, given to the extension over its own event stream and
+// checked on every /ext post. Defeats a local process that read a jobId out of
+// the bridge's logs and tried to inject chunks or finish a job itself.
+const EXT_TOKEN = randomUUID();
 const ADMIN = process.env.AIPASS_ADMIN === '1';
 const ALLOWED_HOSTS = new Set([
   '127.0.0.1', 'localhost', '::1', '[::1]',
@@ -357,7 +366,26 @@ class Job {
   }
   dispatch() {
     const client = pickClient();
-    if (!client) return this.fail('no extension connected — open a de.aipass.net tab and check the popup');
+    // The service worker cycles its SSE connection every few minutes, and in
+    // that gap there is briefly nobody attached. A job arriving then used to
+    // fail outright even though a client reappears seconds later — so wait a
+    // little for one before giving up. Loader reads skip the wait: they are
+    // best-effort cache refreshes, not work the user is blocking on.
+    if (!client && this.kind === 'loader') {
+      return this.fail('no extension connected — open a de.aipass.net tab and check the popup');
+    }
+    if (!client) {
+      if ((this.waited ?? 0) >= DISPATCH_GRACE_MS) {
+        return this.fail('no extension connected — open a de.aipass.net tab and check the popup');
+      }
+      const waited = this.waited ?? 0;
+      setTimeout(() => {
+        if (this.settled || jobs.get(this.id) !== this) return;
+        this.waited = waited + 500;
+        this.dispatch();
+      }, 500);
+      return;
+    }
     this.client = client;
     sendToClient(client, 'job', this.kind === 'loader'
       ? { jobId: this.id, kind: 'loader', url: this.url }
@@ -371,7 +399,16 @@ class Job {
   }
   delta(part) { if (!this.settled) { this.touch(); this.onDelta(part); } }
   done(value) { if (this.settled) return; this.cleanup(); this.onDone(value ?? 'stop'); }
-  fail(message) { if (this.settled) return; this.cleanup(); this.onError(message); }
+  fail(message) {
+    if (this.settled) return;
+    // A timeout or an upstream failure is not the end of the work: the page
+    // keeps polling a video job and keeps a generation running upstream. Tell
+    // it to stop the same way abort() does, or the account keeps paying for a
+    // result nobody will collect.
+    if (this.client) sendToClient(this.client, 'abort', { jobId: this.id });
+    this.cleanup();
+    this.onError(message);
+  }
   abort() {
     if (this.settled) return;
     if (this.client) sendToClient(this.client, 'abort', { jobId: this.id });
@@ -573,12 +610,21 @@ function startChat({ modelId, text, parts, aspectRatio: ratio, thinkingLevel, vi
   let attempts = 0;
   let delivered = 0;
   let current = null;
+  const deadline = Date.now() + DISPATCH_GRACE_MS;
 
   const attempt = async () => {
     attempts++;
     let conversationId;
     try { conversationId = await resolveConversation(); }
-    catch (err) { return onError(err.message); }
+    catch (err) {
+      // No cached conversation means a loader read, which needs an attached
+      // tab. If the extension is merely mid-reconnect, wait it out — the same
+      // grace a job with no conversation work left gets from dispatch().
+      if (/no extension connected/.test(err.message) && Date.now() < deadline) {
+        return setTimeout(attempt, 500);
+      }
+      return onError(err.message);
+    }
 
     current = new Job({
       kind: isVideo ? 'video' : 'chat',
@@ -589,7 +635,10 @@ function startChat({ modelId, text, parts, aspectRatio: ratio, thinkingLevel, vi
       // and dropped a ratio this provider is not served. Re-adding the raw value
       // would put back exactly what validation just removed.
       video: isVideo ? video : undefined,
-      timeoutMs: ['video', 'music'].includes(kindOf(modelId)) ? MEDIA_TIMEOUT_MS : IDLE_TIMEOUT_MS,
+      // Image models go quiet for the whole generation, exactly like a video
+      // render — the 3-minute idle timeout killed image jobs that were about
+      // to succeed, with the credits already spent.
+      timeoutMs: ['video', 'music', 'image'].includes(kindOf(modelId)) ? MEDIA_TIMEOUT_MS : IDLE_TIMEOUT_MS,
       onDelta: (part) => { delivered++; onDelta(part); },
       onDone,
       onError: (message) => {
@@ -680,9 +729,27 @@ async function fetchRemoteAsDataUri(urlStr, kind = 'image') {
     if (current.protocol !== 'http:' && current.protocol !== 'https:') {
       throw new Error(`unsupported protocol: ${current.protocol}`);
     }
-    const host = current.hostname.toLowerCase();
+    let host = current.hostname.toLowerCase();
     if (isPrivateHost(host)) {
       throw new Error(`refusing private/internal network fetch: ${host}`);
+    }
+    // A bare domain name has not been classified yet — it needs DNS. Resolve
+    // it here and refuse any name whose address is private, which is how a
+    // rebinding-style name aimed at loopback or the cloud metadata service
+    // gets caught before the fetch happens. The fetch itself still goes by
+    // name (Node's fetch pins the connection per request), so a name that
+    // flips to a private address between these two points is outside what
+    // this guard can see; it closes the common case, not the race.
+    if (!/^\d+\.\d+\.\d+\.\d+$/.test(host) && !host.includes(':')) {
+      try {
+        const addrs = await dns.lookup(host, { all: true }).catch(() => []);
+        const bad = addrs.find((a) => isPrivateHost(a.address));
+        if (bad) throw new Error(`refusing private/internal network fetch: ${host} resolves to ${bad.address}`);
+      } catch (err) {
+        if (/^refusing /.test(err.message)) throw err;
+        // DNS unavailable or name unresolvable: the fetch below will fail on
+        // its own; do not widen this into an outage.
+      }
     }
 
     const res = await fetch(current, {
@@ -690,6 +757,13 @@ async function fetchRemoteAsDataUri(urlStr, kind = 'image') {
       signal: AbortSignal.timeout(15_000),
       headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
     });
+    // Refuse by the announced size before buffering a single byte of it — a
+    // hostile URL otherwise turns the bridge into a memory hose.
+    const declared = Number(res.headers.get('content-length') || 0);
+    if (declared > MAX_ATTACHMENT_BYTES) {
+      try { await res.body?.cancel(); } catch { /* already gone */ }
+      throw new Error(`attachment too large: ${declared} bytes`);
+    }
     if (REDIRECTS.has(res.status)) {
       try { await res.body?.cancel(); } catch { /* already gone */ }
       const location = res.headers.get('location');
@@ -766,7 +840,14 @@ async function extractUserParts(messages) {
           const urlStr = rawUrl.trim();
           let dataUri = '';
           if (urlStr.startsWith('data:image/')) {
-            dataUri = urlStr;
+            // Base64 inflates by a third, but the cap is on the decoded media
+            // the extension will upload — check that, not the envelope.
+            const declared = Math.floor((urlStr.length - urlStr.indexOf(',') - 1) * 3 / 4);
+            if (declared > MAX_ATTACHMENT_BYTES) {
+              log(`warning: refusing inline image over ${MAX_ATTACHMENT_BYTES} bytes (${declared})`);
+            } else {
+              dataUri = urlStr;
+            }
           } else if (/^https?:\/\//i.test(urlStr)) {
             try {
               dataUri = await fetchRemoteAsDataUri(urlStr, 'image');
@@ -792,8 +873,10 @@ async function extractUserParts(messages) {
           let dataUri = '';
           if (str.startsWith('data:')) {
             const declared = dataUriType(str);
-            if (isAllowedAttachment(declared, 'file')) dataUri = str;
-            else log(`warning: refusing attachment of type ${declared || 'unknown'}`);
+            const bytes = Math.floor((str.length - str.indexOf(',') - 1) * 3 / 4);
+            if (declared && !isAllowedAttachment(declared, 'file')) log(`warning: refusing attachment of type ${declared}`);
+            else if (bytes > MAX_ATTACHMENT_BYTES) log(`warning: refusing inline attachment over ${MAX_ATTACHMENT_BYTES} bytes (${bytes})`);
+            else dataUri = str;
           } else if (/^https?:\/\//i.test(str)) {
             try {
               dataUri = await fetchRemoteAsDataUri(str, 'file');
@@ -1097,7 +1180,12 @@ function extEvents(req, res) {
   const client = { id: randomUUID(), res };
   extClients.add(client);
   log(`extension connected (${extClients.size} total)`);
-  sendToClient(client, 'ready', { clientId: client.id });
+  sendToClient(client, 'ready', { clientId: client.id, token: EXT_TOKEN });
+  // A reconnecting service worker means in-flight jobs may still be running in
+  // the page (their deltas arrive over plain POSTs, not this stream). Re-adopt
+  // any job whose client went away, so a later abort reaches it and a done
+  // post from the old generation is not answered with 'unknown job'.
+  for (const job of jobs.values()) if (!job.client) job.client = client;
   // Warm the caches a moment after the tab attaches — but only if this client
   // is still the reason to: a tab that closed in the meantime would otherwise
   // send a loader job to whoever connected next.
@@ -1125,7 +1213,10 @@ async function extPost(req, res, kind) {
   catch { return json(res, 400, { ok: false }); }
   const job = jobs.get(body.jobId);
   if (!job) return json(res, 200, { ok: false, reason: 'unknown job' });
-  if (kind === 'chunk') for (const part of body.parts ?? []) job.delta(part);
+  if (kind === 'chunk') {
+    if (!Array.isArray(body.parts)) return json(res, 400, { ok: false, reason: 'parts must be an array' });
+    for (const part of body.parts) job.delta(part);
+  }
   else if (kind === 'done') job.done(body.finishReason);
   else if (kind === 'loader') {
     if (typeof body.raw === 'string') job.done(body.raw);
@@ -1193,7 +1284,7 @@ const server = http.createServer(async (req, res) => {
           id: m.id, object: 'model', created: 0, owned_by: m.provider ?? 'aipass',
           name: m.name, free_credit: m.free, thinking: m.thinking,
           kind: m.kind, description: m.description, is_default: m.isDefault,
-          ...(optionSurface(m.id) ? { options: optionSurface(m.id) } : {}),
+          ...(() => { const o = optionSurface(m.id); return o ? { options: o } : {}; })(),
         })),
       });
     }
@@ -1407,11 +1498,16 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (path === '/ext/events' && req.method === 'GET') return extEvents(req, res);
-    if (path === '/ext/chunk' && req.method === 'POST') return await extPost(req, res, 'chunk');
-    if (path === '/ext/done' && req.method === 'POST') return await extPost(req, res, 'done');
-    if (path === '/ext/error' && req.method === 'POST') return await extPost(req, res, 'error');
-    if (path === '/ext/loader' && req.method === 'POST') return await extPost(req, res, 'loader');
-    if (path === '/ext/assistant' && req.method === 'POST') return await extPost(req, res, 'assistant');
+    if (path.startsWith('/ext/') && req.method === 'POST') {
+      // The extension carries the per-run token; anything else posting here is
+      // not the extension, however it learned the jobId.
+      if (req.headers['x-aipass-token'] !== EXT_TOKEN) return json(res, 403, { ok: false, reason: 'bad token' });
+      const kind = path.slice('/ext/'.length);
+      if (!['chunk', 'done', 'error', 'loader', 'assistant'].includes(kind)) {
+        return json(res, 404, { ok: false, reason: 'unknown ext route' });
+      }
+      return await extPost(req, res, kind);
+    }
 
     if (path === '/status' || path === '/health') {
       return json(res, 200, {

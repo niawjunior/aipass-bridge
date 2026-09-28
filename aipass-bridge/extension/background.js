@@ -13,6 +13,9 @@ let controller = null;
 let connected = false;
 let lastError = '';
 const jobTabs = new Map();
+// Per-run token handed over by the bridge on connect; every /ext post carries
+// it so the bridge can tell the extension from any other local process.
+let extToken = '';
 
 // The content script's keepalive port only exists while a de.aipass.net tab is
 // open. With no tab the worker is evicted, the SSE stream dies with it, and the
@@ -64,7 +67,7 @@ async function post(path, body) {
   try {
     const res = await fetch(`${await bridgeUrl()}${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...(extToken ? { 'x-aipass-token': extToken } : {}) },
       body: JSON.stringify(body),
     });
     // Retrying would duplicate deltas, so a refused post is surfaced, not
@@ -192,7 +195,11 @@ async function connect() {
           else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
         }
         if (!dataLines.length) continue; // comment / keepalive
-        try { handleEvent(name, JSON.parse(dataLines.join('\n'))); } catch { /* ignore */ }
+        try {
+          const data = JSON.parse(dataLines.join('\n'));
+          if (name === 'ready' && typeof data.token === 'string') extToken = data.token;
+          handleEvent(name, data);
+        } catch { /* ignore */ }
       }
     }
   } catch (err) {

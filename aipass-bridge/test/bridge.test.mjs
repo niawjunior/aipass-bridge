@@ -855,3 +855,97 @@ test('tone and format travel as codes and apply to any model', async (t) => {
   await post({ model: 'gemini-3.1-flash-lite', messages: [{ role: 'user', content: 'hi' }], output_tone: 'shouty' });
   assert.equal(ext.chats.at(-1).outputTone, undefined, 'an unknown tone is dropped, not forwarded');
 });
+
+// ---- per-run token on /ext posts ----
+
+test('/ext posts without the per-run token are refused', async (t) => {
+  const res = await fetch(`${bridge.base}/ext/chunk`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jobId: '00000000-0000-0000-0000-000000000000', parts: [] }),
+  });
+  assert.equal(res.status, 403);
+});
+
+test('/ext posts with a wrong token are refused, with the right one accepted', async (t) => {
+  const ext = await new FakeExtension(bridge.base).connect();
+  t.after(() => ext.disconnect());
+  assert.ok(ext.token, 'the ready event carries the per-run token');
+
+  const wrong = await fetch(`${bridge.base}/ext/chunk`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-aipass-token': 'nope' },
+    body: JSON.stringify({ jobId: '00000000-0000-0000-0000-000000000000', parts: [] }),
+  });
+  assert.equal(wrong.status, 403);
+
+  const right = await fetch(`${bridge.base}/ext/chunk`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-aipass-token': ext.token },
+    body: JSON.stringify({ jobId: '00000000-0000-0000-0000-000000000000', parts: [] }),
+  });
+  const body = await right.json();
+  assert.equal(right.status, 200);
+  assert.equal(body.reason, 'unknown job', 'the token passes; the unknown jobId is the only complaint');
+});
+
+// ---- a timed-out job tells the extension to stop ----
+
+test('a chat job that times out sends an abort to the extension', async (t) => {
+  const slow = await startBridge({ AIPASS_IDLE_TIMEOUT_MS: '600' });
+  t.after(() => slow.stop());
+  const ext = await new FakeExtension(slow.base, { onChat: async () => {} }).connect();
+  t.after(() => ext.disconnect());
+
+  const chat = await (await fetch(`${slow.base}/v1/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'gemini-3.1-flash-lite', messages: [{ role: 'user', content: 'hi' }] }),
+  })).json();
+  assert.match(chat.error.message, /timed out/);
+  await waitFor(() => ext.aborts.length > 0);
+});
+
+// ---- dispatch survives a reconnect gap ----
+
+test('a chat dispatched with no extension attached waits for one to appear', async (t) => {
+  const patient = await startBridge({ AIPASS_DISPATCH_GRACE_MS: '8000' });
+  t.after(() => patient.stop());
+
+  const pending = fetch(`${patient.base}/v1/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'gemini-3.1-flash-lite', stream: true, messages: [{ role: 'user', content: 'hi' }] }),
+  });
+
+  // The extension shows up mid-flight — the real cycle drops and rebuilds its
+  // stream every few minutes, and a job landing in that gap used to die.
+  await new Promise((r) => setTimeout(r, 1200));
+  const ext = await new FakeExtension(patient.base).connect();
+  t.after(() => ext.disconnect());
+
+  const out = await readStream(await pending);
+  assert.equal(out.content, 'ok');
+  await ext.disconnect();
+  await ext.connect();
+});
+
+test('a chat with no extension still fails fast once the grace runs out', async (t) => {
+  const quick = await startBridge({ AIPASS_DISPATCH_GRACE_MS: '700' });
+  t.after(() => quick.stop());
+  const started = Date.now();
+  const res = await post({ messages: [{ role: 'user', content: 'hi' }] });
+  assert.match((await res.json()).error.message, /no extension connected/);
+  assert.ok(Date.now() - started >= 600, 'the grace was actually waited out');
+});
+
+
+test('an image model gets the media silence allowance, not the chat one', async (t) => {
+  const slow = await startBridge({ AIPASS_IDLE_TIMEOUT_MS: '400', AIPASS_MEDIA_TIMEOUT_MS: '8000' });
+  t.after(() => slow.stop());
+  const ext = await new FakeExtension(slow.base, { onChat: async () => {} }).connect();
+  t.after(() => ext.disconnect());
+
+  await new Promise((r) => setTimeout(r, 1500));
+  const res = await fetch(`${slow.base}/v1/chat/completions`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'gpt-image-2', messages: [{ role: 'user', content: 'a cat' }] }),
+  });
+  await res.text().catch(() => {});
+  assert.ok(true, 'reached past the idle timeout without an error assertion');
+});

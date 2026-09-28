@@ -85,9 +85,35 @@ const cyan = (s) => `\x1b[36m${s}\x1b[0m`;
 
 const overlay = new Map();
 
+const REAL_ROOT = fs.realpathSync(ROOT);
+
 function safe(p) {
   const abs = path.resolve(ROOT, p);
   if (abs !== ROOT && !abs.startsWith(ROOT + path.sep)) throw new Error(`path escapes root: ${p}`);
+  // A symlink inside the project can point anywhere on disk, and the prefix
+  // check alone would happily follow it out of ROOT. Resolve the real path of
+  // the nearest existing ancestor and compare against the resolved root — a
+  // link whose target lives outside is refused rather than traversed. The
+  // lexical path is what comes back: every consumer (overlay keys,
+  // path.relative, diff labels) is built on it.
+  let probe = abs;
+  const tail = [];
+  while (!fs.existsSync(probe)) {
+    tail.unshift(path.basename(probe));
+    const parent = path.dirname(probe);
+    if (parent === probe) break;
+    probe = parent;
+  }
+  try {
+    const real = fs.realpathSync(probe);
+    const target = tail.length ? path.join(real, ...tail) : real;
+    if (target !== REAL_ROOT && !target.startsWith(REAL_ROOT + path.sep)) {
+      throw new Error(`path escapes root: ${p}`);
+    }
+  } catch (err) {
+    if (/escapes root/.test(String(err.message))) throw err;
+    // Unreadable ancestor: the lexical check above still stands.
+  }
   return abs;
 }
 const readAt = (abs) => (overlay.has(abs) ? overlay.get(abs) : fs.readFileSync(abs, 'utf8'));
@@ -312,8 +338,17 @@ const TOOLS = {
     const more = hits.length >= MAX ? `\n… stopped at ${MAX} matches; make the search more specific for the rest.` : '';
     return hits.join('\n') + more;
   },
-  run(_arg, body) {
+  async run(_arg, body) {
     if (!ALLOW_RUN) return 'shell commands are disabled for this run';
+    // File writes ask before touching disk; a shell command can do strictly
+    // more than a write, so it asks too. Non-interactive runs (piped input,
+    // --apply scripting) proceed without a prompt, matching how the apply
+    // prompt itself behaves.
+    if (process.stdin.isTTY && !APPLY) {
+      console.log(bold('\nthe model wants to run:\n') + cyan(body) + '\n');
+      const answer = await prompt('run it? [y/N] ');
+      if (!/^y(es)?$/i.test(String(answer ?? '').trim())) return 'the user declined to run that command.';
+    }
     // /bin/sh does not exist on Windows; cmd.exe is the always-present
     // equivalent there. The model writes for whichever it was told about.
     const [shell, flagArgs] = process.platform === 'win32'
@@ -578,7 +613,11 @@ const canPrompt = () => Boolean(process.stdin.isTTY) || !WATCH;
 function writeOverlay() {
   for (const [abs, text] of overlay) {
     fs.mkdirSync(path.dirname(abs), { recursive: true });
-    fs.writeFileSync(abs, text);
+    // Write-then-rename, so a crash mid-write cannot leave a half-written
+    // file where a whole one used to be.
+    const tmp = `${abs}.aipass-tmp`;
+    fs.writeFileSync(tmp, text);
+    fs.renameSync(tmp, abs);
   }
   console.log(green(`\nwrote ${overlay.size} file(s) to disk`));
 }
@@ -690,7 +729,7 @@ async function runTask(taskText, { first }) {
     const results = [];
     for (const call of work) {
       let result;
-      try { result = TOOLS[call.kind](call.arg, call.body); }
+      try { result = await TOOLS[call.kind](call.arg, call.body); }
       catch (err) { result = `error: ${err.message}`; }
       const [head, ...rest] = result.split('\n');
       const refused = /^(no such|error|the text|that text)/.test(result) || / is (a|an) .*, not text\.$/.test(head);

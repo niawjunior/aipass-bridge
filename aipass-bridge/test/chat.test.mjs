@@ -224,3 +224,18 @@ test('--resolution and the video switches reach the job', async (t) => {
   assert.equal(job.generateAudio, false);
   assert.equal(job.stylePreprompt, 'Documentary style.');
 });
+
+test('a missing --out directory is created on save', async (t) => {
+  // 1x1 transparent PNG.
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const ext = await new FakeExtension(bridge.base, {
+    onChat: async (job, e) => { await e.image(png); await e.done(); },
+  }).connect();
+  t.after(() => ext.disconnect());
+
+  const dir = path.join(tempDir({}), 'deep', 'nested', 'new');
+  const { out, code } = await run(CHAT, ['a cat', '--bridge', bridge.base, '--out', dir]);
+  assert.equal(code, 0, out);
+  assert.match(out, /image saved to/);
+  assert.equal(fs.readdirSync(dir).filter((f) => f.endsWith('.png')).length, 1, 'the directory now exists and holds the file');
+});
