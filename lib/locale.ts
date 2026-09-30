@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 export type LocaleCode = "th" | "en" | "ja" | "ko";
 
@@ -19,23 +19,39 @@ export const UI_LOCALES: UiLocale[] = [
 
 const LOCALE_KEY = "vihokai_locale";
 
-function readInitial(): LocaleCode {
+function readStored(): LocaleCode {
   if (typeof window === "undefined") return "th";
-  const stored = window.localStorage.getItem(LOCALE_KEY) as LocaleCode | null;
-  if (stored && UI_LOCALES.some((l) => l.code === stored)) return stored;
+  try {
+    const stored = window.localStorage.getItem(LOCALE_KEY) as LocaleCode | null;
+    if (stored && UI_LOCALES.some((l) => l.code === stored)) return stored;
+  } catch {
+    /* storage unavailable */
+  }
   return "th";
+}
+
+// Same-tab subscribers, plus the cross-tab "storage" event below.
+const listeners = new Set<() => void>();
+
+function emit(): void {
+  for (const listener of listeners) listener();
+}
+
+function subscribe(onChange: () => void): () => void {
+  listeners.add(onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    listeners.delete(onChange);
+    window.removeEventListener("storage", onChange);
+  };
 }
 
 /** Client-side UI language switcher, persisted in localStorage. */
 export function useUILocale() {
-  const [locale, setLocaleState] = useState<LocaleCode>("th");
-
-  useEffect(() => {
-    setLocaleState(readInitial());
-  }, []);
+  // Server renders Thai; React adopts the stored language after hydration.
+  const locale = useSyncExternalStore(subscribe, readStored, () => "th" as LocaleCode);
 
   const setLocale = useCallback((code: LocaleCode) => {
-    setLocaleState(code);
     try {
       window.localStorage.setItem(LOCALE_KEY, code);
     } catch {
@@ -44,6 +60,7 @@ export function useUILocale() {
     if (typeof document !== "undefined") {
       document.documentElement.lang = code;
     }
+    emit();
   }, []);
 
   return [locale, setLocale] as const;

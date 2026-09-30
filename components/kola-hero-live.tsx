@@ -16,7 +16,7 @@ type Ripple = { id: number; x: number; y: number };
 
 /**
  * Eye overlay positions as percentages of the artwork, matching
- * public/kola-hero.png (800x800). Keep in sync with scripts/gen-kola-hero.cjs.
+ * public/kola-hero.png (800x800). Keep in sync with scripts/gen-kola-hero.mjs.
  */
 const EYE_BOXES = [
   { left: 32.5, top: 44.5 },

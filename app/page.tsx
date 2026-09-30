@@ -1,502 +1,687 @@
-﻿"use client";
+"use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ArrowRight,
   Bot,
-  Brain,
-  Check,
-  Code,
-  FileText,
+  BrainCircuit,
+  Code2,
+  Cpu,
+  FileSearch,
+  Globe2,
   Menu,
-  Network,
   Search,
-  ShieldCheck,
   Sparkles,
-  Workflow,
   X,
+  Zap,
 } from "lucide-react";
+import { useIsLoggedIn } from "@/lib/browser-state";
+import { UI_LOCALES, useUILocale } from "@/lib/locale";
 import { HOME_COPY } from "@/lib/home-copy";
-import { useUILocale, type LocaleCode } from "@/lib/locale";
-import LocaleSwitcher from "@/components/locale-switcher";
-import KolaHero from "@/components/kola-hero";
-
-const capabilities = [
-  { key: "fMulti" as const, icon: Brain, sub: "GPT Â· Claude Â· Gemini Â· Ollama" },
-  { key: "fSearch" as const, icon: Search, sub: "Real-time web results" },
-  { key: "fRag" as const, icon: FileText, sub: "Source citations" },
-  { key: "fCode" as const, icon: Code, sub: "IDE-ready snippets" },
-  { key: "fReason" as const, icon: Sparkles, sub: "Step-by-step thinking" },
-  { key: "fAuto" as const, icon: Workflow, sub: "Agent pipelines" },
-];
-
-const agents = [
-  { key: "teamLead" as const, desc: "teamLeadD" as const, icon: Bot, tone: "cyan" },
-  { key: "teamR" as const, desc: "teamRD" as const, icon: Search, tone: "indigo" },
-  { key: "teamC" as const, desc: "teamCD" as const, icon: Code, tone: "emerald" },
-  { key: "teamD" as const, desc: "teamDD" as const, icon: FileText, tone: "amber" },
-  { key: "teamJ" as const, desc: "teamJD" as const, icon: ShieldCheck, tone: "violet" },
-  { key: "teamB" as const, desc: "teamBD" as const, icon: Network, tone: "sky" },
-];
-
-const systemFeatures = [
-  "mS1" as const,
-  "mS2" as const,
-  "mS3" as const,
-  "mS4" as const,
-  "mS5" as const,
-];
-
-const toneClass: Record<string, string> = {
-  cyan: "text-cyan-300 border-cyan-400/25 bg-cyan-400/10",
-  indigo: "text-indigo-300 border-indigo-400/25 bg-indigo-400/10",
-  emerald: "text-emerald-300 border-emerald-400/25 bg-emerald-400/10",
-  amber: "text-amber-300 border-amber-400/25 bg-amber-400/10",
-  violet: "text-violet-300 border-violet-400/25 bg-violet-400/10",
-  sky: "text-sky-300 border-sky-400/25 bg-sky-400/10",
-};
 
 export default function Home() {
-  const [locale, setLocale] = useUILocale();
-  const copy = HOME_COPY[locale as LocaleCode];
   const [menuOpen, setMenuOpen] = useState(false);
+  const loggedIn = useIsLoggedIn();
+  const [locale, setLocale] = useUILocale();
+  const t = HOME_COPY[locale];
 
-  const nav = [
-    { href: "#features", label: copy.navFeatures },
-    { href: "#team", label: copy.navTeam },
-    { href: "#mission", label: copy.navMission },
-    { href: "#pricing", label: copy.navPricing },
-    { href: "#roadmap", label: copy.navRoadmap },
-  ];
+  const chatHref = "/th";
+  const signupHref = "/auth?mode=register";
+  const loginHref = "/auth";
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-[#02050a] text-slate-100">
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute left-1/2 top-[-20rem] h-[46rem] w-[46rem] -translate-x-1/2 rounded-full bg-cyan-500/10 blur-3xl" />
-        <div className="absolute right-[-15rem] top-[30rem] h-[34rem] w-[34rem] rounded-full bg-indigo-600/10 blur-3xl" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(34,211,238,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(34,211,238,0.06)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]" />
+    <main className="min-h-screen overflow-hidden bg-[#050505] text-white">
+      {/* BACKGROUND */}
+      <div className="pointer-events-none fixed inset-0 z-0">
+        <div className="absolute left-1/2 top-[-300px] h-[700px] w-[900px] -translate-x-1/2 rounded-full bg-cyan-500/[0.06] blur-[150px]" />
+        <div className="absolute right-[-200px] top-[500px] h-[500px] w-[500px] rounded-full bg-blue-600/[0.05] blur-[150px]" />
+        <div className="absolute left-[-200px] top-[900px] h-[500px] w-[500px] rounded-full bg-orange-500/[0.035] blur-[150px]" />
       </div>
 
-      <header className="sticky top-0 z-50 border-b border-cyan-400/10 bg-[#02050a]/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-8">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 p-1.5">
-              <Bot className="h-5 w-5 text-cyan-300" />
-            </span>
-            <span className="font-mono text-sm font-bold tracking-[0.25em] text-white">
-              VI<span className="text-cyan-400">HOK</span>AI
+      {/* NAVBAR */}
+      <header className="relative z-50 border-b border-white/[0.07] bg-black/70 backdrop-blur-xl">
+        <div className="mx-auto flex h-[72px] max-w-[1400px] items-center justify-between px-5 md:px-8">
+          <Link href="/" className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#5b4cff] shadow-[0_0_25px_rgba(91,76,255,.35)]">
+              <span className="text-lg font-black">V</span>
+            </div>
+            <span className="text-[20px] font-bold tracking-tight text-slate-200">
+              ViHok AI
             </span>
           </Link>
 
-          <nav className="hidden items-center gap-1 lg:flex">
-            {nav.map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                className="rounded-lg px-3.5 py-2 text-sm text-slate-400 transition hover:bg-cyan-400/10 hover:text-cyan-200"
-              >
-                {item.label}
-              </a>
-            ))}
+          <nav className="hidden items-center gap-7 lg:flex">
+            <a href="#features" className="text-sm text-slate-400 transition hover:text-white">
+              {t.navFeatures}
+            </a>
+            <a href="#team" className="text-sm text-slate-400 transition hover:text-white">
+              {t.navTeam}
+            </a>
+            <a href="#mission" className="text-sm text-slate-400 transition hover:text-white">
+              {t.navMission}
+            </a>
+            <a href="#pricing" className="text-sm text-slate-400 transition hover:text-white">
+              {t.navPricing}
+            </a>
+            <a href="#roadmap" className="text-sm text-slate-400 transition hover:text-white">
+              {t.navRoadmap}
+            </a>
           </nav>
 
-          <div className="hidden items-center gap-2 lg:flex">
-            <LocaleSwitcher locale={locale} onChange={setLocale} />
-            <Link
-              href="/auth"
-              className="rounded-lg border border-slate-700/60 px-4 py-2 text-sm text-slate-300 transition hover:border-cyan-400/40 hover:text-white"
-            >
-              {copy.loginNav}
-            </Link>
-            <Link
-              href="/auth"
-              className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
-            >
-              {copy.signupNav}
-            </Link>
+          <div className="hidden items-center gap-4 lg:flex">
+            <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-1.5">
+              {UI_LOCALES.map((l) => (
+                <button
+                  key={l.code}
+                  onClick={() => setLocale(l.code)}
+                  title={l.name}
+                  aria-label={l.name}
+                  aria-pressed={locale === l.code}
+                  className={`rounded-full px-1.5 text-sm transition ${
+                    locale === l.code ? "opacity-100" : "opacity-40 hover:opacity-80"
+                  }`}
+                >
+                  {l.flag}
+                </button>
+              ))}
+            </div>
+            {loggedIn ? (
+              <a
+                href={chatHref}
+                className="rounded-full bg-white px-5 py-2.5 text-sm font-bold text-black transition hover:bg-cyan-300"
+              >
+                {t.enterChat}
+              </a>
+            ) : (
+              <>
+                <a
+                  href={loginHref}
+                  className="text-sm font-medium text-slate-300 hover:text-white"
+                >
+                  {t.loginNav}
+                </a>
+                <a
+                  href={signupHref}
+                  className="rounded-full bg-white px-5 py-2.5 text-sm font-bold text-black transition hover:bg-cyan-300"
+                >
+                  {t.signupNav}
+                </a>
+              </>
+            )}
           </div>
 
           <button
-            onClick={() => setMenuOpen((v) => !v)}
-            aria-label="Toggle navigation"
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="lg:hidden"
+            aria-label="menu"
             aria-expanded={menuOpen}
-            className="rounded-lg border border-slate-700/60 p-2 text-slate-300 lg:hidden"
           >
-            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            {menuOpen ? <X /> : <Menu />}
           </button>
         </div>
 
         {menuOpen && (
-          <div className="border-t border-cyan-400/10 bg-[#02050a]/95 px-4 py-4 backdrop-blur-xl lg:hidden">
-            <nav className="flex flex-col gap-1">
-              {nav.map((item) => (
-                <a
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMenuOpen(false)}
-                  className="rounded-lg px-3 py-2.5 text-sm text-slate-300 transition hover:bg-cyan-400/10"
-                >
-                  {item.label}
-                </a>
-              ))}
-            </nav>
-            <div className="mt-4 flex items-center justify-between gap-3">
-              <LocaleSwitcher locale={locale} onChange={setLocale} />
-              <div className="flex gap-2">
-                <Link
-                  href="/auth"
-                  className="rounded-lg border border-slate-700/60 px-4 py-2 text-sm text-slate-300"
-                >
-                  {copy.loginNav}
-                </Link>
-                <Link
-                  href="/auth"
-                  className="rounded-lg bg-cyan-400 px-4 py-2 text-sm font-semibold text-slate-950"
-                >
-                  {copy.signupNav}
-                </Link>
+          <div className="border-t border-white/10 bg-black px-6 py-6 lg:hidden">
+            <div className="flex flex-col gap-5">
+              <div className="flex items-center gap-2">
+                {UI_LOCALES.map((l) => (
+                  <button
+                    key={l.code}
+                    onClick={() => setLocale(l.code)}
+                    title={l.name}
+                    aria-label={l.name}
+                    aria-pressed={locale === l.code}
+                    className={`rounded-full px-2 py-1 text-lg ${
+                      locale === l.code ? "bg-white/10" : "opacity-50"
+                    }`}
+                  >
+                    {l.flag}
+                  </button>
+                ))}
               </div>
+              <a href="#features" onClick={() => setMenuOpen(false)}>
+                {t.navFeatures}
+              </a>
+              <a href="#team" onClick={() => setMenuOpen(false)}>
+                {t.navTeam}
+              </a>
+              <a href="#mission" onClick={() => setMenuOpen(false)}>
+                {t.navMission}
+              </a>
+              <a href="#pricing" onClick={() => setMenuOpen(false)}>
+                {t.navPricing}
+              </a>
+              {loggedIn ? (
+                <a
+                  href={chatHref}
+                  className="rounded-xl bg-white px-5 py-3 text-center font-bold text-black"
+                >
+                  {t.enterChat}
+                </a>
+              ) : (
+                <>
+                  <a href={loginHref}>{t.loginNav}</a>
+                  <a
+                    href={signupHref}
+                    className="rounded-xl bg-white px-5 py-3 text-center font-bold text-black"
+                  >
+                    {t.signupNav}
+                  </a>
+                </>
+              )}
             </div>
           </div>
         )}
       </header>
 
-      <main className="flex-1">
-        {/* HERO */}
-        <section className="relative overflow-hidden">
-          <div className="absolute left-1/2 top-10 -z-10 h-[30rem] w-[30rem] -translate-x-1/2 rounded-full bg-cyan-500/20 blur-[120px]" />
-          <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-2 lg:gap-8 lg:px-8 lg:py-28">
-            <div className="text-center lg:text-left">
-              <span className="inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-400/10 px-3.5 py-1.5 font-mono text-[10px] tracking-[0.25em] text-cyan-200 sm:text-xs">
-                <Sparkles className="h-3.5 w-3.5" />
-                NEXT GENERATION AI INTELLIGENCE
+      {/* HERO */}
+      <section className="relative z-10 min-h-[780px] overflow-hidden">
+        <div className="absolute inset-0">
+          <KolaHero />
+          <div className="absolute inset-0 bg-gradient-to-r from-[#050505] via-[#050505]/95 via-[48%] to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 h-[250px] bg-gradient-to-t from-[#050505] to-transparent" />
+        </div>
+
+        <div className="relative mx-auto flex min-h-[780px] max-w-[1400px] items-center px-6 md:px-10">
+          <div className="max-w-[650px] pt-10">
+            <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-orange-400/20 bg-orange-400/[0.06] px-4 py-2">
+              <span className="text-sm" aria-hidden="true">
+                &#128640;
               </span>
-
-              <h1 className="mt-6 text-4xl font-bold leading-[1.12] tracking-tight sm:text-5xl lg:text-6xl">
-                <span className="bg-gradient-to-r from-cyan-300 via-sky-300 to-indigo-300 bg-clip-text text-transparent">
-                  {copy.heroTitle1}
-                </span>{" "}
-                <span className="text-white">{copy.heroTitle2}</span>{" "}
-                <span className="bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent">
-                  {copy.heroTitle3}
-                </span>
-              </h1>
-
-              <p className="mx-auto mt-4 max-w-xl text-sm text-cyan-200/80 sm:text-base lg:mx-0">
-                {copy.tagA} {copy.tagB}
-              </p>
-              <p className="mx-auto mt-3 max-w-xl text-sm text-slate-400 sm:text-base lg:mx-0">
-                {copy.heroDesc}
-              </p>
-
-              <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center lg:justify-start">
-                <Link
-                  href="/auth"
-                  className="group flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-400 px-6 py-3.5 font-semibold text-slate-950 transition hover:bg-cyan-300 sm:w-auto"
-                >
-                  {copy.ctaFree}
-                  <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-                </Link>
-                <a
-                  href="#mission"
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/5 px-6 py-3.5 font-semibold text-cyan-200 transition hover:bg-cyan-400/10 sm:w-auto"
-                >
-                  {copy.ctaHow}
-                </a>
-              </div>
-
-              <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs text-slate-500 lg:justify-start">
-                <span className="inline-flex items-center gap-1.5">
-                  <Check className="h-3.5 w-3.5 text-emerald-400" />
-                  {copy.freeChats}
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Check className="h-3.5 w-3.5 text-emerald-400" />
-                  {copy.freeReset}
-                </span>
-              </div>
-            </div>
-
-            <div className="relative">
-              <KolaHero />
-              <div className="mx-auto mt-4 flex max-w-sm items-center justify-center gap-2 rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-2.5 text-xs text-emerald-200">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-                {copy.mReq}
-              </div>
-            </div>
-          </div>
-        </section>
-
-
-
-
-        {/* CAPABILITIES */}
-        <section id="features" className="mx-auto max-w-7xl scroll-mt-20 px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
-          <div className="mb-10 max-w-2xl">
-            <p className="font-mono text-xs tracking-[0.3em] text-cyan-400">CAPABILITIES</p>
-            <h2 className="mt-3 text-2xl font-bold text-white sm:text-3xl lg:text-4xl">
-              {copy.fMulti}
-            </h2>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {capabilities.map(({ key, icon: Icon, sub }) => (
-              <div
-                key={key}
-                className="group relative overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-900/50 p-6 backdrop-blur-xl transition hover:border-cyan-400/40 hover:bg-slate-900/80"
-              >
-                <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-cyan-400/10 opacity-0 blur-2xl transition group-hover:opacity-100" />
-                <span className="inline-flex rounded-xl border border-cyan-400/25 bg-cyan-400/10 p-2.5">
-                  <Icon className="h-5 w-5 text-cyan-300" />
-                </span>
-                <h3 className="mt-4 text-base font-semibold text-white">{copy[key]}</h3>
-                <p className="mt-1.5 font-mono text-xs text-slate-500">{sub}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-
-        {/* AI TEAM */}
-        <section
-          id="team"
-          className="relative scroll-mt-20 border-y border-cyan-400/10 bg-slate-950/40 py-16 lg:py-24"
-        >
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="mb-10 max-w-2xl">
-              <p className="font-mono text-xs tracking-[0.3em] text-cyan-400">{copy.teamEyebrow}</p>
-              <h2 className="mt-3 text-2xl font-bold text-white sm:text-3xl lg:text-4xl">
-                {copy.teamH}
-              </h2>
-              <p className="mt-3 text-sm text-slate-400 sm:text-base">{copy.teamSub}</p>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {agents.map(({ key, desc, icon: Icon, tone }) => (
-                <div
-                  key={key}
-                  className="group rounded-2xl border border-slate-800/80 bg-slate-900/50 p-6 backdrop-blur-xl transition hover:border-cyan-400/30 hover:bg-slate-900/80"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className={`inline-flex rounded-xl border p-2.5 ${toneClass[tone]}`}>
-                      <Icon className="h-5 w-5" />
-                    </span>
-                    <span className="font-mono text-[10px] tracking-[0.2em] text-slate-600">
-                      ONLINE
-                    </span>
-                  </div>
-                  <h3 className="mt-4 text-base font-semibold text-white">{copy[key]}</h3>
-                  <p className="mt-1.5 text-sm text-slate-400">{copy[desc]}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-10">
-              <Link
-                href="/th"
-                className="group inline-flex items-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/5 px-5 py-3 text-sm font-semibold text-cyan-200 transition hover:bg-cyan-400/10"
-              >
-                {copy.teamCta}
-                <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-              </Link>
-            </div>
-          </div>
-        </section>
-
-
-        {/* MISSION / COMMAND CENTER */}
-        <section id="mission" className="mx-auto max-w-7xl scroll-mt-20 px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
-          <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-14">
-            <div>
-              <p className="font-mono text-xs tracking-[0.3em] text-cyan-400">{copy.mEyebrow}</p>
-              <h2 className="mt-3 text-2xl font-bold leading-tight text-white sm:text-3xl lg:text-4xl">
-                {copy.mH1}
-                <span className="block bg-gradient-to-r from-cyan-300 to-indigo-300 bg-clip-text text-transparent">
-                  {copy.mH2}
-                </span>
-              </h2>
-              <p className="mt-4 text-sm text-slate-400 sm:text-base">{copy.mDesc}</p>
-
-              <ul className="mt-8 space-y-3">
-                {systemFeatures.map((key) => (
-                  <li key={key} className="flex items-center gap-3 text-sm text-slate-300">
-                    <span className="inline-flex rounded-lg border border-cyan-400/25 bg-cyan-400/10 p-1.5">
-                      <Check className="h-3.5 w-3.5 text-cyan-300" />
-                    </span>
-                    {copy[key]}
-                  </li>
-                ))}
-              </ul>
-
-              <Link
-                href="/auth"
-                className="group mt-9 inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-6 py-3.5 font-semibold text-slate-950 transition hover:bg-cyan-300"
-              >
-                {copy.mCta}
-                <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-              </Link>
-            </div>
-
-            <div className="relative">
-              <div className="rounded-3xl border border-cyan-400/20 bg-slate-900/60 p-5 shadow-[0_0_80px_-30px_rgba(34,211,238,0.6)] backdrop-blur-xl sm:p-6">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                  <div>
-                    <p className="font-mono text-[10px] tracking-[0.3em] text-cyan-400/80">
-                      AI COMMAND CENTER
-                    </p>
-                    <p className="mt-1 text-sm font-semibold text-white">KOLA</p>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-[11px] text-emerald-300">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-                    ACTIVE
-                  </span>
-                </div>
-
-                <div className="mt-4 space-y-3 font-mono text-xs">
-                  <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-                    <p className="text-slate-500">&gt; {copy.mReq}</p>
-                  </div>
-                  <div className="ml-6 space-y-2 rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
-                    {agents.slice(1, 5).map(({ key, icon: Icon }) => (
-                      <p key={key} className="flex items-center gap-2 text-cyan-200/80">
-                        <Icon className="h-3.5 w-3.5 text-cyan-400" />
-                        {copy[key]}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-4 grid grid-cols-3 gap-3">
-                  {[
-                    { label: "MODELS", value: "12+" },
-                    { label: "SOURCES", value: "1.2K" },
-                    { label: "UPTIME", value: "99.9%" },
-                  ].map((s) => (
-                    <div
-                      key={s.label}
-                      className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-center"
-                    >
-                      <p className="text-lg font-bold text-cyan-300">{s.value}</p>
-                      <p className="font-mono text-[10px] tracking-[0.2em] text-slate-500">
-                        {s.label}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-
-        {/* PRICING */}
-        <section
-          id="pricing"
-          className="relative scroll-mt-20 border-y border-cyan-400/10 bg-slate-950/40 py-16 lg:py-24"
-        >
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div className="mb-12 text-center">
-              <p className="font-mono text-xs tracking-[0.3em] text-cyan-400">{copy.pEyebrow}</p>
-              <h2 className="mt-3 text-2xl font-bold text-white sm:text-3xl lg:text-4xl">
-                {copy.pH1} <span className="text-cyan-300">{copy.pH2}</span>
-              </h2>
-              <p className="mx-auto mt-3 max-w-xl text-sm text-slate-400">{copy.pSub}</p>
-            </div>
-
-            <div className="mx-auto grid max-w-4xl gap-6 md:grid-cols-2">
-              <div className="rounded-3xl border border-slate-800 bg-slate-900/50 p-7 backdrop-blur-xl">
-                <h3 className="text-lg font-semibold text-white">{copy.freeName}</h3>
-                <p className="mt-1 text-sm text-slate-500">{copy.freeSub}</p>
-                <p className="mt-6 flex items-end gap-1">
-                  <span className="text-5xl font-bold text-white">฿0</span>
-                  <span className="pb-1.5 text-sm text-slate-500">{copy.perMo}</span>
-                </p>
-                <ul className="mt-6 space-y-3">
-                  {[copy.freeF1, copy.freeF2, copy.freeF3].map((f) => (
-                    <li key={f} className="flex items-start gap-2.5 text-sm text-slate-300">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-cyan-400" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  href="/auth"
-                  className="mt-7 block rounded-xl border border-cyan-400/30 bg-cyan-400/5 py-3 text-center font-semibold text-cyan-200 transition hover:bg-cyan-400/10"
-                >
-                  {copy.freeCta}
-                </Link>
-              </div>
-
-              <div className="relative rounded-3xl border border-cyan-400/40 bg-gradient-to-b from-cyan-400/10 to-slate-900/60 p-7 shadow-[0_0_70px_-25px_rgba(34,211,238,0.7)] backdrop-blur-xl">
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-cyan-400 px-3 py-1 font-mono text-[10px] font-bold tracking-[0.2em] text-slate-950">
-                  {copy.proBadge}
-                </span>
-                <h3 className="text-lg font-semibold text-white">{copy.proName}</h3>
-                <p className="mt-1 text-sm text-slate-500">{copy.proSub}</p>
-                <p className="mt-6 flex items-end gap-1">
-                  <span className="text-5xl font-bold text-cyan-300">฿199</span>
-                  <span className="pb-1.5 text-sm text-slate-500">{copy.perMo}</span>
-                </p>
-                <ul className="mt-6 space-y-3">
-                  {[copy.proF1, copy.proF2, copy.proF3].map((f) => (
-                    <li key={f} className="flex items-start gap-2.5 text-sm text-slate-200">
-                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  href="/auth"
-                  className="mt-7 block rounded-xl bg-cyan-400 py-3 text-center font-semibold text-slate-950 transition hover:bg-cyan-300"
-                >
-                  {copy.proCta}
-                </Link>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* FINAL CTA + ROADMAP */}
-        <section id="roadmap" className="mx-auto max-w-7xl scroll-mt-20 px-4 py-20 sm:px-6 lg:px-8">
-          <div className="relative overflow-hidden rounded-3xl border border-cyan-400/25 bg-gradient-to-br from-cyan-400/10 via-slate-900/60 to-indigo-500/10 p-8 text-center backdrop-blur-xl sm:p-14">
-            <h2 className="text-2xl font-bold text-white sm:text-3xl lg:text-4xl">
-              {copy.ctaH1}{" "}
-              <span className="bg-gradient-to-r from-cyan-300 to-indigo-300 bg-clip-text text-transparent">
-                {copy.ctaH2}
+              <span className="text-xs font-semibold tracking-wide text-orange-300">
+                {t.heroBadge}
               </span>
-            </h2>
-            <p className="mx-auto mt-4 max-w-xl text-sm text-slate-300 sm:text-base">
-              {copy.ctaSub}
+            </div>
+
+            <h1 className="leading-[0.9]">
+              <span className="block text-6xl font-black tracking-[-0.04em] md:text-8xl">
+                {t.heroTitle1}
+              </span>
+              <span className="mt-2 block text-5xl font-black tracking-[-0.04em] md:text-7xl">
+                <span className="bg-gradient-to-r from-yellow-300 via-cyan-400 to-blue-400 bg-clip-text text-transparent">
+                  {t.heroTitle2}
+                </span>
+              </span>
+              <span className="mt-1 block text-7xl font-black italic tracking-[-0.05em] md:text-9xl">
+                {t.heroTitle3}
+              </span>
+            </h1>
+
+            <p className="mt-7 text-2xl font-semibold text-slate-100 md:text-3xl">
+              {t.tagA}
+              <br />
+              <span className="bg-gradient-to-r from-cyan-300 via-blue-400 to-white bg-clip-text text-transparent">
+                {t.tagB}
+              </span>
             </p>
-            <Link
-              href="/auth"
-              className="group mt-8 inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-7 py-3.5 font-semibold text-slate-950 transition hover:bg-cyan-300"
-            >
-              {copy.ctaTry}
-              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-            </Link>
-          </div>
-        </section>
-      </main>
 
-      <footer className="border-t border-cyan-400/10 bg-slate-950/60 py-10 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl flex-col items-center gap-4 px-4 sm:px-6 lg:flex-row lg:justify-between lg:px-8">
-          <Link href="/" className="flex items-center gap-2.5">
-            <span className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 p-1.5">
-              <Bot className="h-5 w-5 text-cyan-300" />
+            <p className="mt-6 max-w-[560px] text-base leading-7 text-slate-400 md:text-lg">
+              {t.heroDesc}
+            </p>
+
+            <div className="mt-9 flex flex-wrap gap-4">
+              <a
+                href={loggedIn ? chatHref : signupHref}
+                className="group flex items-center gap-3 rounded-xl bg-white px-7 py-4 font-bold text-black transition hover:-translate-y-1 hover:bg-cyan-300"
+              >
+                {t.ctaFree}
+                <ArrowRight size={18} className="transition group-hover:translate-x-1" />
+              </a>
+              <a
+                href="#mission"
+                className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-7 py-4 font-semibold text-slate-200 backdrop-blur-xl transition hover:border-cyan-400/40 hover:bg-cyan-400/[0.05]"
+              >
+                <PlayIcon />
+                {t.ctaHow}
+              </a>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-bold text-yellow-400">{t.freePlan}</span>
+              <span className="text-slate-500">&bull;</span>
+              <span className="text-slate-500">{t.freeChats}</span>
+              <span className="text-slate-600">&bull;</span>
+              <span className="text-slate-500">{t.freeReset}</span>
+            </div>
+            {!loggedIn && (
+              <p className="mt-2 text-sm text-slate-500">
+                {t.noAccount}{" "}
+                <Link
+                  href={signupHref}
+                  className="font-semibold text-white hover:underline"
+                >
+                  {t.signupFree}
+                </Link>
+                {" · "}
+                {t.hasAccount}{" "}
+                <Link
+                  href={loginHref}
+                  className="font-semibold text-white hover:underline"
+                >
+                  {t.login}
+                </Link>
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* FLOATING KOLA STATUS */}
+        <div className="absolute bottom-[90px] right-[7%] hidden w-[280px] rounded-2xl border border-cyan-400/20 bg-black/60 p-4 shadow-[0_0_50px_rgba(34,211,238,.08)] backdrop-blur-xl xl:block">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-300">
+                <Bot size={19} />
+              </div>
+              <div>
+                <div className="text-sm font-bold">Kola</div>
+                <div className="text-[10px] text-slate-500">AI COMMANDER</div>
+              </div>
+            </div>
+            <span className="flex items-center gap-1 text-[10px] font-bold text-green-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+              ONLINE
             </span>
-            <span className="font-mono text-sm font-bold tracking-[0.25em] text-white">
-              VI<span className="text-cyan-400">HOK</span>AI
-            </span>
-          </Link>
-          <p className="font-mono text-[10px] tracking-[0.25em] text-slate-600 sm:text-xs">
-            {copy.footerSub}
-          </p>
-          <LocaleSwitcher locale={locale} onChange={setLocale} />
+          </div>
+          <div className="mt-4 border-t border-white/10 pt-3">
+            <div className="text-[10px] text-slate-500">CURRENT MISSION</div>
+            <div className="mt-1 text-sm text-slate-300">Orchestrating AI Team...</div>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full w-[68%] rounded-full bg-gradient-to-r from-cyan-400 to-blue-500" />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FEATURES */}
+      <section id="features" className="relative z-10 border-y border-white/[0.07] bg-[#080808]">
+        <div className="mx-auto grid max-w-[1400px] grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
+          <Feature icon={<BrainCircuit />} title="Multi-AI" text={t.fMulti} />
+          <Feature icon={<Search />} title="Search" text={t.fSearch} />
+          <Feature icon={<FileSearch />} title="RAG" text={t.fRag} />
+          <Feature icon={<Code2 />} title="Coding" text={t.fCode} />
+          <Feature icon={<Sparkles />} title="Reasoning" text={t.fReason} />
+          <Feature icon={<Zap />} title="Automation" text={t.fAuto} />
+        </div>
+      </section>
+
+      {/* AI TEAM */}
+      <section id="team" className="relative z-10 bg-[#050505] py-28">
+        <div className="mx-auto max-w-[1200px] px-6">
+          <div className="text-center">
+            <div className="text-xs font-bold tracking-[0.35em] text-cyan-400">
+              {t.teamEyebrow}
+            </div>
+            <h2 className="mt-5 text-4xl font-black md:text-6xl">{t.teamH}</h2>
+            <p className="mx-auto mt-5 max-w-2xl leading-7 text-slate-500">{t.teamSub}</p>
+          </div>
+
+          <div className="relative mt-16">
+            <div className="absolute left-1/2 top-[85px] hidden h-[120px] w-px bg-gradient-to-b from-cyan-400 to-transparent md:block" />
+            <div className="mx-auto max-w-[420px]">
+              <TeamCard
+                icon={<BrainCircuit />}
+                role="ORCHESTRATOR"
+                name={t.teamLead}
+                description={t.teamLeadD}
+                active
+              />
+            </div>
+            <div className="mt-12 grid gap-4 md:grid-cols-4">
+              <TeamCard
+                icon={<Globe2 />}
+                role="RESEARCHER"
+                name={t.teamR}
+                description={t.teamRD}
+              />
+              <TeamCard icon={<Code2 />} role="CODER" name={t.teamC} description={t.teamCD} />
+              <TeamCard
+                icon={<FileSearch />}
+                role="DOCUMENT AI"
+                name={t.teamD}
+                description={t.teamDD}
+              />
+              <TeamCard icon={<Cpu />} role="BACKUP AI" name={t.teamB} description={t.teamBD} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* MISSION */}
+      <section
+        id="mission"
+        className="relative z-10 border-y border-white/[0.07] bg-[#080808] py-28"
+      >
+        <div className="mx-auto max-w-[1200px] px-6">
+          <div className="grid items-center gap-16 lg:grid-cols-2">
+            <div>
+              <div className="text-xs font-bold tracking-[0.35em] text-orange-400">
+                {t.mEyebrow}
+              </div>
+              <h2 className="mt-5 text-4xl font-black leading-tight md:text-6xl">
+                {t.mH1}
+                <br />
+                <span className="bg-gradient-to-r from-orange-300 to-cyan-400 bg-clip-text text-transparent">
+                  {t.mH2}
+                </span>
+              </h2>
+              <p className="mt-6 leading-8 text-slate-500">{t.mDesc}</p>
+              <a
+                href={chatHref}
+                className="mt-8 inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3.5 font-bold text-black"
+              >
+                {t.mCta}
+                <ArrowRight size={17} />
+              </a>
+            </div>
+
+            <div className="rounded-3xl border border-white/10 bg-black p-5 shadow-[0_0_80px_rgba(34,211,238,.04)] md:p-7">
+              <div className="flex items-center justify-between border-b border-white/10 pb-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-400/10 text-cyan-400">
+                    <Bot size={20} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold">KOLA COMMAND</div>
+                    <div className="text-[10px] text-slate-600">MISSION #001</div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold text-green-400">RUNNING</span>
+              </div>
+
+              <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                <div className="text-[10px] text-slate-600">USER REQUEST</div>
+                <div className="mt-2 text-sm leading-6 text-slate-300">{t.mReq}</div>
+              </div>
+
+              <div className="mt-6 space-y-3">
+                <Mission
+                  icon={<BrainCircuit size={15} />}
+                  name={t.teamLead}
+                  status="Planning"
+                  active
+                />
+                <Mission
+                  icon={<Globe2 size={15} />}
+                  name={t.teamR}
+                  status="Searching web"
+                  active
+                />
+                <Mission
+                  icon={<FileSearch size={15} />}
+                  name={t.teamD}
+                  status="Reading PDF"
+                  active
+                />
+                <Mission icon={<Code2 size={15} />} name={t.teamC} status="Waiting" />
+                <Mission
+                  icon={<Sparkles size={15} />}
+                  name={t.teamJ}
+                  status="Final review"
+                />
+              </div>
+
+              <div className="mt-6 border-t border-white/10 pt-5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-600">Mission progress</span>
+                  <span className="text-cyan-400">68%</span>
+                </div>
+                <div className="mt-2 h-1.5 rounded-full bg-white/10">
+                  <div className="h-full w-[68%] rounded-full bg-gradient-to-r from-cyan-400 to-blue-500" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* PRICING */}
+      <section id="pricing" className="relative z-10 bg-[#050505] py-24">
+        <div className="mx-auto max-w-[1000px] px-6 text-center">
+          <div className="text-xs font-bold tracking-[0.35em] text-cyan-400">{t.pEyebrow}</div>
+          <h2 className="mt-5 text-4xl font-black md:text-6xl">
+            {t.pH1}
+            <br />
+            {t.pH2}
+          </h2>
+          <p className="mx-auto mt-6 max-w-2xl leading-7 text-slate-500">{t.pSub}</p>
+          <div className="mt-10 flex flex-wrap justify-center gap-3">
+            <Badge text="Smart Routing" />
+            <Badge text="Multi-Agent" />
+            <Badge text="RAG" />
+            <Badge text="Semantic Cache" />
+            <Badge text="AI Judge" />
+          </div>
+
+          <div className="mt-12 grid gap-5 text-left md:grid-cols-2">
+            <div className="rounded-3xl border border-white/10 bg-white/[0.02] p-8">
+              <h3 className="text-xl font-bold">{t.freeName}</h3>
+              <p className="mt-1 text-xs text-slate-500">{t.freeSub}</p>
+              <div className="mt-4 flex items-baseline gap-2">
+                <span className="text-4xl font-black">$0</span>
+                <span className="text-slate-500">{t.perMo}</span>
+              </div>
+              <ul className="mt-6 space-y-2 text-sm text-slate-400">
+                <li>&#10003; {t.freeF1}</li>
+                <li>&#10003; {t.freeF2}</li>
+                <li>&#10003; {t.freeF3}</li>
+              </ul>
+              <a
+                href={loggedIn ? chatHref : signupHref}
+                className="mt-8 block rounded-xl bg-white py-3 text-center font-bold text-black"
+              >
+                {t.freeCta}
+              </a>
+            </div>
+            <div className="rounded-3xl border border-cyan-400/20 bg-cyan-400/[0.03] p-8 opacity-80">
+              <div className="mb-3 inline-block rounded-full bg-white px-3 py-1 text-xs font-bold text-black">
+                {t.proBadge}
+              </div>
+              <h3 className="text-xl font-bold">{t.proName}</h3>
+              <p className="mt-1 text-xs text-slate-500">{t.proSub}</p>
+              <div className="mt-4 flex items-baseline gap-2">
+                <span className="text-4xl font-black">$20</span>
+                <span className="text-slate-500">{t.perMo}</span>
+              </div>
+              <ul className="mt-6 space-y-2 text-sm text-slate-400">
+                <li>&#10003; {t.proF1}</li>
+                <li>&#10003; {t.proF2}</li>
+                <li>&#10003; {t.proF3}</li>
+              </ul>
+              <button
+                disabled
+                className="mt-8 block w-full cursor-not-allowed rounded-xl bg-white/10 py-3 text-center font-bold text-slate-400"
+              >
+                {t.proCta}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FINAL CTA */}
+      <section
+        id="roadmap"
+        className="relative z-10 overflow-hidden border-t border-white/[0.07] bg-[#080808] py-32"
+      >
+        <div className="absolute left-1/2 top-1/2 h-[400px] w-[700px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-500/[0.06] blur-[120px]" />
+        <div className="relative mx-auto max-w-[900px] px-6 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-cyan-400/30 bg-cyan-400/10 text-cyan-400">
+            <Bot size={30} />
+          </div>
+          <h2 className="mt-7 text-4xl font-black md:text-6xl">
+            {t.ctaH1}
+            <span className="text-cyan-400"> {t.ctaH2}</span>
+          </h2>
+          <p className="mx-auto mt-5 max-w-xl text-slate-500">{t.ctaSub}</p>
+          <div className="mt-9 flex flex-wrap justify-center gap-4">
+            <a
+              href={loggedIn ? chatHref : signupHref}
+              className="rounded-xl bg-white px-8 py-4 font-bold text-black transition hover:bg-cyan-300"
+            >
+              {t.ctaFree}
+            </a>
+            <a
+              href={chatHref}
+              className="rounded-xl border border-white/10 bg-white/[0.03] px-8 py-4 font-bold text-white"
+            >
+              {t.ctaTry}
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="relative z-10 border-t border-white/[0.07] bg-black">
+        <div className="mx-auto flex max-w-[1400px] flex-col justify-between gap-5 px-6 py-8 md:flex-row md:items-center">
+          <div>
+            <div className="text-lg font-bold text-slate-300">
+              ViHok <span className="text-cyan-400">AI</span>
+            </div>
+            <div className="mt-1 text-xs text-slate-700">{t.footerSub}</div>
+          </div>
+          <div className="flex gap-6 text-xs text-slate-600">
+            <span>Privacy</span>
+            <span>Terms</span>
+            <span>Security</span>
+          </div>
         </div>
       </footer>
+    </main>
+  );
+}
+
+/**
+ * KOLA hero image. Gates rendering on load so the page never flashes a
+ * broken image. Uses next/image instead of <img> to satisfy the
+ * no-img-element lint rule.
+ */
+function KolaHero() {
+  const [ok, setOk] = useState(false);
+  useEffect(() => {
+    const img = new window.Image();
+    img.onload = () => setOk(true);
+    img.onerror = () => setOk(false);
+    img.src = "/kola-hero.png";
+  }, []);
+  if (!ok) return null;
+  return (
+    <Image
+      src="/kola-hero.png"
+      alt="VihokAI Kola robotic bird"
+      width={850}
+      height={720}
+      priority
+      className="absolute right-[-10%] top-[30px] h-[720px] w-[850px] object-contain object-center opacity-95 lg:right-[-5%]"
+    />
+  );
+}
+
+function Feature({
+  icon,
+  title,
+  text,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 border-r border-white/[0.07] px-5 py-5">
+      <div className="text-cyan-400">{icon}</div>
+      <div>
+        <div className="text-sm font-bold">{title}</div>
+        <div className="text-[10px] text-slate-600">{text}</div>
+      </div>
     </div>
   );
 }
 
+function TeamCard({
+  icon,
+  role,
+  name,
+  description,
+  active = false,
+}: {
+  icon: React.ReactNode;
+  role: string;
+  name: string;
+  description: string;
+  active?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border p-5 transition ${
+        active
+          ? "border-cyan-400/40 bg-cyan-400/[0.05] shadow-[0_0_50px_rgba(34,211,238,.08)]"
+          : "border-white/10 bg-white/[0.02] hover:border-white/20"
+      }`}
+    >
+      <div className="flex items-center gap-4">
+        <div
+          className={`flex h-11 w-11 items-center justify-center rounded-xl ${
+            active ? "bg-cyan-400/10 text-cyan-400" : "bg-white/[0.05] text-slate-400"
+          }`}
+        >
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <div className="text-[9px] font-bold tracking-[0.2em] text-slate-600">{role}</div>
+          <div className="mt-1 font-bold">{name}</div>
+          <div className="mt-1 text-xs text-slate-600">{description}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Mission({
+  icon,
+  name,
+  status,
+  active = false,
+}: {
+  icon: React.ReactNode;
+  name: string;
+  status: string;
+  active?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+      <div
+        className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+          active ? "bg-cyan-400/10 text-cyan-400" : "bg-white/[0.04] text-slate-600"
+        }`}
+      >
+        {icon}
+      </div>
+      <div className="flex-1">
+        <div className="text-xs font-bold">{name}</div>
+        <div className="text-[10px] text-slate-600">{status}</div>
+      </div>
+      <div
+        className={`h-1.5 w-1.5 rounded-full ${
+          active ? "animate-pulse bg-green-400" : "bg-slate-700"
+        }`}
+      />
+    </div>
+  );
+}
+
+function Badge({ text }: { text: string }) {
+  return (
+    <span className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-slate-400">
+      {text}
+    </span>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/10">
+      <span className="ml-0.5 border-y-[4px] border-l-[6px] border-y-transparent border-l-cyan-400" />
+    </span>
+  );
+}

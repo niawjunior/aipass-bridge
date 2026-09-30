@@ -8,6 +8,12 @@ export interface HomeCopy {
   navRoadmap: string;
   loginNav: string;
   signupNav: string;
+  enterChat: string;
+  heroBadge: string;
+  noAccount: string;
+  signupFree: string;
+  hasAccount: string;
+  login: string;
 
   heroTitle1: string;
   heroTitle2: string;
@@ -17,6 +23,7 @@ export interface HomeCopy {
   heroDesc: string;
   ctaFree: string;
   ctaHow: string;
+  freePlan: string;
   freeChats: string;
   freeReset: string;
 
@@ -92,6 +99,12 @@ const th: HomeCopy = {
   navRoadmap: "แผนงาน",
   loginNav: "เข้าสู่ระบบ",
   signupNav: "สมัครใช้งาน",
+  enterChat: "เข้าสู่แชท",
+  heroBadge: "แพลตฟอร์ม AI อัจฉรัยที่พร้อมใช้งานจริง",
+  noAccount: "ยังไม่มีบัญชี?",
+  signupFree: "สมัครฟรี",
+  hasAccount: "มีบัญชีอยู่แล้ว?",
+  login: "เข้าสู่ระบบ",
 
   heroTitle1: "ViHok",
   heroTitle2: "AI ที่เข้าใจคุณ",
@@ -102,6 +115,7 @@ const th: HomeCopy = {
     "ระบบอัจฉรัยที่ตอบได้ลึกซึ้ง อ้างอิงแหล่งข้อมูลจริง เขียนโค้ดได้ และทำงานร่วมกันเป็นทีม AI อัตโนมัติ",
   ctaFree: "เริ่มใช้งานฟรี",
   ctaHow: "ดูวิธีใช้งาน",
+  freePlan: "แผนฟรี",
   freeChats: "แชทไม่จำกัด",
   freeReset: "รีเซ็ตทุกวัน",
 
@@ -177,6 +191,12 @@ const en: HomeCopy = {
   navRoadmap: "Roadmap",
   loginNav: "Sign in",
   signupNav: "Sign up",
+  enterChat: "Enter chat",
+  heroBadge: "The production-ready AI platform",
+  noAccount: "No account yet?",
+  signupFree: "Sign up free",
+  hasAccount: "Already have an account?",
+  login: "Sign in",
 
   heroTitle1: "ViHok",
   heroTitle2: "AI that truly",
@@ -187,6 +207,7 @@ const en: HomeCopy = {
     "An intelligent system that answers deeply, cites real sources, writes code, and works together as an autonomous AI team.",
   ctaFree: "Start for free",
   ctaHow: "See how it works",
+  freePlan: "Free plan",
   freeChats: "Unlimited chats",
   freeReset: "Resets daily",
 
@@ -263,6 +284,12 @@ const ja: HomeCopy = {
   navRoadmap: "ロードマップ",
   loginNav: "ログイン",
   signupNav: "新規登録",
+  enterChat: "チャットを開く",
+  heroBadge: "すぐに使える本格AIプラットフォーム",
+  noAccount: "アカウントをお持ちでない方",
+  signupFree: "無料で登録",
+  hasAccount: "すでにアカウントをお持ちの方",
+  login: "ログイン",
 
   heroTitle1: "ViHok",
   heroTitle2: "あなたを本当に理解する",
@@ -273,6 +300,7 @@ const ja: HomeCopy = {
     "深く回答し、参照元の根拠を示し、コードを書き、自律的なAIチームとして連携するインテリジェントシステム。",
   ctaFree: "無料で試す",
   ctaHow: "使い方を見る",
+  freePlan: "無料プラン",
   freeChats: "チャット無制限",
   freeReset: "毎日リセット",
 
@@ -348,6 +376,12 @@ const ko: HomeCopy = {
   navRoadmap: "로드맵",
   loginNav: "로그인",
   signupNav: "회원가입",
+  enterChat: "채팅 입장",
+  heroBadge: "바로 쓸 수 있는 프로덕션 AI 플랫폼",
+  noAccount: "계정이 없으신가요?",
+  signupFree: "무료로 가입",
+  hasAccount: "이미 계정이 있으신가요?",
+  login: "로그인",
 
   heroTitle1: "ViHok",
   heroTitle2: "당신을 진심으로 이해하는",
@@ -358,6 +392,7 @@ const ko: HomeCopy = {
     "깊이 있는 답변과 실제 출처 인용, 코드 작성, 자율적으로 협업하는 AI 팀을 제공하는 지능형 시스템입니다.",
   ctaFree: "무료로 시작하기",
   ctaHow: "사용 방법 보기",
+  freePlan: "무료 플랜",
   freeChats: "무제한 채팅",
   freeReset: "매일 초기화",
 
