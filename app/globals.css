@@ -1,26 +1,144 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  --background: #02050a;
+  --foreground: #e6f1ff;
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Keep the hitech identity on light-mode devices too */
+body,
+input,
+button,
+textarea,
+select {
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #02050a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.25);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.45);
+}
+
+@keyframes vihok-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes vihok-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+
+@keyframes vihok-scan {
+  0% {
+    transform: translateY(-10%);
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(110%);
+    opacity: 0;
+  }
+}
+
+.animate-orbit {
+  animation: vihok-spin 40s linear infinite;
+}
+
+.animate-float {
+  animation: vihok-float 7s ease-in-out infinite;
+}
+
+.animate-scan {
+  animation: vihok-scan 6s linear infinite;
+}
+
+@keyframes vihok-wave {
+  0%,
+  100% {
+    height: 6px;
+  }
+  50% {
+    height: calc(6px + var(--kola-wave-amp, 0px));
+  }
+}
+
+/* Timing is fixed in CSS so React re-renders (audioLevel updates) never
+   restart the animation and leave bars stuck at their first frame. */
+.kola-wave-bar {
+  height: 6px;
+  animation: vihok-wave 0.55s ease-in-out infinite;
+}
+
+.kola-wave-bar:nth-child(1) {
+  animation-duration: 0.42s;
+}
+.kola-wave-bar:nth-child(2) {
+  animation-duration: 0.5s;
+  animation-delay: 0.06s;
+}
+.kola-wave-bar:nth-child(3) {
+  animation-duration: 0.38s;
+  animation-delay: 0.12s;
+}
+.kola-wave-bar:nth-child(4) {
+  animation-duration: 0.6s;
+  animation-delay: 0.04s;
+}
+.kola-wave-bar:nth-child(5) {
+  animation-duration: 0.46s;
+  animation-delay: 0.16s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .animate-orbit,
+  .animate-float,
+  .animate-scan,
+  .kola-wave-bar {
+    animation: none;
+  }
 }
